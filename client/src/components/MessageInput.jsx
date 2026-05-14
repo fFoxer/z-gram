@@ -1,130 +1,248 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useSelector } from 'react-redux';
-import { IoSend } from 'react-icons/io5';
+import { IoSend, IoClose } from 'react-icons/io5';
 import AttachIcon from '../icons/AttachIcon';
 import MicrophoneIcon from '../icons/MicrophoneIcon';
 import MoodIcon from '../icons/MoodIcon';
-import VoiceRecorder from './VoiceRecorder'; // ✅ Импорт
+import VoiceRecorder from './VoiceRecorder';
 import axios from 'axios';
+import EmojiPicker from 'emoji-picker-react';
 
 const MessageInput = ({ socket, onFileUpload }) => {
-  const [text, setText] = useState('');
-  const [isRecording, setIsRecording] = useState(false); // ✅ Состояние записи
+  const [isRecording, setIsRecording] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  
   const activeChatId = useSelector((state) => state.chats?.activeChat);
   const currentUserId = useSelector((state) => state.auth?.user?.id);
   const fileInputRef = useRef(null);
+  const inputRef = useRef(null);
+  const savedRangeRef = useRef(null);
 
-  const handleSendText = () => {
-    if (!text.trim() || !socket || !activeChatId) return;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (!e.target.closest('.emoji-picker-container') && 
+          !e.target.closest('[aria-label="Emoji"]')) {
+        setShowEmojiPicker(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // ✅ Сбор текста с учетом картинок-смайлов
+  const getContentForSending = () => {
+    if (!inputRef.current) return '';
     
+    let text = '';
+    // Проходим по всем дочерним узлам
+    inputRef.current.childNodes.forEach(node => {
+      if (node.nodeType === Node.TEXT_NODE) {
+        text += node.textContent;
+      } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'IMG') {
+        // Если картинка - берем сохраненный юникод
+        text += node.getAttribute('data-unicode') || '';
+      }
+    });
+    return text.trim();
+  };
+
+  const handleSendText = (e) => {
+    e?.preventDefault();
+    e?.stopPropagation();
+
+    const content = getContentForSending();
+    if (!content || !socket || !activeChatId) return;
+    
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     socket.emit('send_message', { 
       chatId: activeChatId, 
-      content: text.trim(), 
+      content: content, 
       sender_id: currentUserId, 
-      time 
+      time,
+      type: 'text'
     });
-    setText('');
+    
+    inputRef.current.innerText = '';
+    inputRef.current.focus();
   };
 
   const handleFileChange = (e) => {
     const files = e.target.files;
-    if (files.length > 0 && onFileUpload) {
-      onFileUpload(files);
-    }
+    if (files.length > 0 && onFileUpload) onFileUpload(files);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // ✅ Логика отправки голосового
   const handleVoiceSend = async (audioBlob, duration) => {
-  console.log('🎤 Отправка голосового:', { duration, blobSize: audioBlob.size }); // ✅ ЛОГ
+    try {
+      const formData = new FormData();
+      const file = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
+      formData.append('file', file);
+      const res = await axios.post('http://localhost:5000/api/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      socket.emit('send_message', {
+        chatId: activeChatId, content: 'Голосовое сообщение', sender_id: currentUserId,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        file_url: res.data.url, type: 'voice', duration
+      });
+      setIsRecording(false);
+    } catch (error) { console.error('Voice upload error:', error); }
+  };
 
-  try {
-    const formData = new FormData();
-    const file = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
-    formData.append('file', file);
+  const handleEmojiButtonClick = () => {
+    if (inputRef.current) {
+      inputRef.current.focus();
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        savedRangeRef.current = selection.getRangeAt(0).cloneRange();
+      }
+    }
+    setShowEmojiPicker(prev => !prev);
+  };
 
-    const res = await axios.post('http://localhost:5000/api/upload', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
-
-    const fileUrl = res.data.url;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    console.log('📤 Emit send_message с данными:', {
-      chatId: activeChatId,
-      content: 'Голосовое сообщение',
-      type: 'voice',
-      duration: duration, // ✅ Проверь это значение
-      file_url: fileUrl
-    });
-
-    socket.emit('send_message', {
-      chatId: activeChatId,
-      content: 'Голосовое сообщение',
-      sender_id: currentUserId,
-      time,
-      file_url: fileUrl,
-      type: 'voice',
-      duration: duration // ✅ Обязательно передаём
-    });
+  const handleEmojiClick = (emojiData) => {
+    if (!inputRef.current) return;
     
-    setIsRecording(false);
-  } catch (error) {
-    console.error('Voice upload error:', error);
-  }
-};
+    inputRef.current.focus();
+    const selection = window.getSelection();
+    
+    if (savedRangeRef.current) {
+      selection.removeAllRanges();
+      selection.addRange(savedRangeRef.current);
+    }
+    
+    const range = selection.getRangeAt(0);
+    
+    const img = document.createElement('img');
+    const code = emojiData.unified || emojiData.emoji.codePointAt(0).toString(16).toUpperCase();
+    img.src = `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/${code}.svg`;
+    
+    // ✅ Сохраняем сам эмодзи-символ в атрибут
+    img.setAttribute('data-unicode', emojiData.emoji);
+    
+    img.className = 'inline w-5 h-5 align-text-bottom mx-[1px] select-none object-contain';
+    img.draggable = false;
+    img.alt = ''; // Пустой alt, чтобы не мешал
+    
+    range.deleteContents();
+    range.insertNode(img);
+    
+    const newRange = document.createRange();
+    newRange.setStartAfter(img);
+    newRange.collapse(true);
+    selection.removeAllRanges();
+    selection.addRange(newRange);
+    
+    savedRangeRef.current = newRange.cloneRange();
+  };
+
+  const handleInput = () => {
+    if (inputRef.current) {
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        savedRangeRef.current = selection.getRangeAt(0).cloneRange();
+      }
+    }
+  };
+
+  // Проверка наличия контента
+  const [hasContent, setHasContent] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      if (inputRef.current) {
+        const text = inputRef.current.innerText.trim();
+        const images = inputRef.current.querySelectorAll('img').length;
+        setHasContent(text.length > 0 || images > 0);
+      }
+    };
+    check();
+  }, [showEmojiPicker, isRecording]);
 
   return (
     <div className="h-[60px] bg-[#373737] border-t border-[#222] flex items-center px-4 gap-3 relative">
-      
-      {/* Если не записываем - обычный интерфейс */}
       {!isRecording ? (
         <>
-          <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileChange} 
-            className="hidden" 
-          />
-
-          <button onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-white transition p-2">
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+          <button type="button" onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-white transition p-2">
             <AttachIcon className="w-6 h-6" />
           </button>
           
-          <input
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSendText()}
+          <div
+            ref={inputRef}
+            contentEditable
+            onInput={() => {
+               handleInput();
+               if(inputRef.current) {
+                 const text = inputRef.current.innerText.trim();
+                 const images = inputRef.current.querySelectorAll('img').length;
+                 setHasContent(text.length > 0 || images > 0);
+               }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSendText(e);
+              }
+            }}
             placeholder="Напиши сообщение..."
-            className="flex-1 bg-[#484849] text-white text-sm rounded-xl py-2.5 px-4 placeholder-gray-400 focus:outline-none"
+            className="flex-1 bg-[#484849] text-white text-sm rounded-xl py-2.5 px-4 placeholder-gray-400 focus:outline-none min-h-[40px] max-h-[120px] overflow-y-auto empty:before:content-[attr(placeholder)] empty:before:text-gray-400"
+            style={{ wordBreak: 'break-word' }}
+            suppressContentEditableWarning={true}
           />
           
           <div className="flex items-center gap-1">
-            {text.trim() ? (
-              <button onClick={handleSendText} className="text-[#BBBCBF] hover:text-white transition p-2">
+            <button 
+              type="button"
+              onClick={handleEmojiButtonClick}
+              className="text-gray-400 hover:text-white transition p-2 relative"
+              aria-label="Emoji"
+            >
+              <MoodIcon className="w-6 h-6" />
+            </button>
+
+            {showEmojiPicker && (
+              <div className="emoji-picker-container absolute bottom-full right-0 mb-2 z-50 shadow-2xl rounded-xl overflow-hidden border border-[#444]">
+                <button 
+                  type="button"
+                  onClick={() => setShowEmojiPicker(false)}
+                  className="absolute top-2 right-2 text-gray-400 hover:text-white z-10"
+                >
+                  <IoClose size={20} />
+                </button>
+                
+                <EmojiPicker 
+                  onEmojiClick={handleEmojiClick}
+                  theme="dark"
+                  emojiStyle="twitter"
+                  searchDisabled={false}
+                  previewConfig={{ showPreview: false }}
+                  lazyLoadEmojis={true}
+                />
+              </div>
+            )}
+
+            {hasContent ? (
+              <button 
+                type="button" 
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={handleSendText} 
+                className="text-[#BBBCBF] hover:text-white transition p-2"
+              >
                 <IoSend size={24} />
               </button>
             ) : (
-              <>
-                <button className="text-gray-400 hover:text-white transition p-2">
-                  <MoodIcon className="w-6 h-6" />
-                </button>
-                {/* ✅ Кнопка микрофона запускает запись */}
-                <button onClick={() => setIsRecording(true)} className="text-gray-400 hover:text-white transition p-2">
-                  <MicrophoneIcon className="w-6 h-6" />
-                </button>
-              </>
+              <button 
+                type="button" 
+                onClick={() => setIsRecording(true)} 
+                className="text-gray-400 hover:text-white transition p-2"
+              >
+                <MicrophoneIcon className="w-6 h-6" />
+              </button>
             )}
           </div>
         </>
       ) : (
-        // ✅ Если записываем - показываем VoiceRecorder
-        <VoiceRecorder 
-          onSend={handleVoiceSend} 
-          onCancel={() => setIsRecording(false)} 
-        />
+        <VoiceRecorder onSend={handleVoiceSend} onCancel={() => setIsRecording(false)} />
       )}
     </div>
   );

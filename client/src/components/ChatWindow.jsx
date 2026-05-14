@@ -101,37 +101,45 @@ const ChatWindow = () => {
 
   // ✅ Единая функция загрузки файлов
   const handleFileUpload = async (files) => {
-    if (!files || files.length === 0 || !socket || !activeChatId) return;
+  if (!files || files.length === 0 || !socket || !activeChatId) return;
 
-    const file = files[0];
-    if (file.size > 300 * 1024 * 1024) {
-      alert('Файл слишком большой (макс 300МБ)');
-      return;
-    }
+  const file = files[0];
+  if (file.size > 50 * 1024 * 1024) { // 50 МБ
+    alert('Файл слишком большой (макс 50МБ)');
+    return;
+  }
 
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
 
-      const res = await axios.post('http://localhost:5000/api/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
+    const res = await axios.post('http://localhost:5000/api/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
 
-      const fileUrl = res.data.url;
-      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const fileUrl = res.data.url;
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
-      socket.emit('send_message', {
-        chatId: activeChatId,
-        content: file.name,
-        sender_id: currentUserId,
-        time,
-        file_url: fileUrl,
-        type: file.type.startsWith('image/') ? 'image' : 'file'
-      });
-    } catch (error) {
-      console.error('Upload error:', error);
-    }
-  };
+    // ✅ Определяем тип: image, video или file
+    let contentType = 'file';
+    if (file.type.startsWith('image/')) contentType = 'image';
+    else if (file.type.startsWith('video/')) contentType = 'video';
+    else if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|ogg|flac|aac|m4a)$/i)) {
+  contentType = 'audio'; // ✅ Теперь аудиофайлы помечаются как 'audio'
+}
+
+    socket.emit('send_message', {
+      chatId: activeChatId,
+      content: file.name,
+      sender_id: currentUserId,
+      time,
+      file_url: fileUrl,
+      type: contentType // ✅ Теперь будет 'video' для видеофайлов
+    });
+  } catch (error) {
+    console.error('Upload error:', error);
+  }
+};
 
   // ✅ Drag & Drop обработчики
   const [isDragging, setIsDragging] = useState(false);

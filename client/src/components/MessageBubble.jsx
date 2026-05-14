@@ -2,24 +2,82 @@ import React, { useState } from 'react';
 import MessageMenu from './MessageMenu';
 import VoicePlayer from './VoicePlayer';
 
-// ✅ Функция для цвета имени (стабильный цвет по ID)
-const getSenderColor = (userId) => {
-  const colors = [
-    'text-blue-400', 'text-green-400', 'text-yellow-400', 
-    'text-red-400', 'text-purple-400', 'text-pink-400', 'text-indigo-400'
-  ];
-  return colors[userId % colors.length];
+// ✅ Надёжная функция: превращает ВСЕ эмодзи в картинки (Twemoji с правильными CORS)
+const renderRichContent = (text) => {
+  if (!text || typeof text !== 'string') return text;
+
+  const result = [];
+  let lastIndex = 0;
+  let keyIndex = 0;
+
+  // Расширенный regex для всех популярных эмодзи
+  const emojiRegex = /[\u{1F600}-\u{1F64F}]|[\u{1F300}-\u{1F5FF}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{FE00}-\u{FE0F}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]|[\u{1F004}]|[\u{1F0CF}]|[\u{1F170}-\u{1F171}]|[\u{1F17E}-\u{1F17F}]|[\u{1F18E}]|[\u{1F191}-\u{1F19A}]|[\u{1F201}-\u{1F202}]|[\u{1F21A}]|[\u{1F22F}]|[\u{1F232}-\u{1F23A}]|[\u{1F250}-\u{1F251}]|[\u{203C}]|[\u{2049}]|[\u{2122}]|[\u{2139}]|[\u{2194}-\u{2199}]|[\u{21A9}-\u{21AA}]|[\u{231A}-\u{231B}]|[\u{2328}]|[\u{23CF}]|[\u{23E9}-\u{23F3}]|[\u{23F8}-\u{23FA}]|[\u{24C2}]|[\u{25AA}-\u{25AB}]|[\u{25B6}]|[\u{25C0}]|[\u{25FB}-\u{25FE}]|[\u{2614}-\u{2615}]|[\u{2648}-\u{2653}]|[\u{267F}]|[\u{2693}]|[\u{26A1}]|[\u{26AA}-\u{26AB}]|[\u{26BD}-\u{26BE}]|[\u{26C4}-\u{26C5}]|[\u{26CE}]|[\u{26D4}]|[\u{26EA}]|[\u{26F2}-\u{26F3}]|[\u{26F5}]|[\u{26FA}]|[\u{26FD}]|[\u{2702}]|[\u{2705}]|[\u{2708}-\u{270D}]|[\u{270F}]|[\u{2712}]|[\u{2714}]|[\u{2716}]|[\u{271D}]|[\u{2721}]|[\u{2728}]|[\u{2733}-\u{2734}]|[\u{2744}]|[\u{2747}]|[\u{274C}]|[\u{274E}]|[\u{2753}-\u{2755}]|[\u{2757}]|[\u{2763}-\u{2764}]|[\u{2795}-\u{2797}]|[\u{27A1}]|[\u{27B0}]|[\u{27BF}]|[\u{2934}-\u{2935}]|[\u{2B05}-\u{2B07}]|[\u{2B1B}-\u{2B1C}]|[\u{2B50}]|[\u{2B55}]|[\u{3030}]|[\u{303D}]|[\u{3297}]|[\u{3299}]/gu;
+
+  let match;
+  while ((match = emojiRegex.exec(text)) !== null) {
+    const emoji = match[0];
+    const matchIndex = match.index;
+
+    // Добавляем текст до эмодзи
+    if (matchIndex > lastIndex) {
+      const textBefore = text.slice(lastIndex, matchIndex);
+      // Обрабатываем ссылки в тексте
+      result.push(...processLinks(textBefore, keyIndex));
+      keyIndex++;
+    }
+
+    // Добавляем эмодзи как картинку (Twemoji CDN)
+    // ✅ ВАЖНО: для Twemoji код должен быть в нижнем регистре!
+    const code = emoji.codePointAt(0).toString(16);
+    const imgUrl = `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/${code}.svg`;
+
+    result.push(
+      <img
+        key={`emoji-${keyIndex}`}
+        src={imgUrl}
+        alt=""
+        className="inline w-5 h-5 align-text-bottom mx-[1px] select-none object-contain"
+        draggable="false"
+        loading="lazy"
+        onError={(e) => {
+          // Fallback на системный эмодзи если картинка не грузится
+          e.target.style.display = 'none';
+          const span = document.createElement('span');
+          span.textContent = emoji;
+          span.className = 'inline w-5 h-5 text-base';
+          e.target.parentNode.insertBefore(span, e.target.nextSibling);
+        }}
+      />
+    );
+    keyIndex++;
+
+    lastIndex = matchIndex + emoji.length;
+  }
+
+  // Добавляем оставшийся текст после последнего эмодзи
+  if (lastIndex < text.length) {
+    const textAfter = text.slice(lastIndex);
+    result.push(...processLinks(textAfter, keyIndex));
+  }
+
+  return result.length > 0 ? result : text;
 };
 
-// ✅ Парсер ссылок (без изменений)
-const parseMessageContent = (content) => {
-  if (!content) return null;
+// Отдельная функция для обработки ссылок
+const processLinks = (text, baseKey) => {
   const urlRegex = /(https?:\/\/[^\s<]+[^<.,:;"')\]\s])/g;
-  const parts = content.split(urlRegex);
-  return parts.map((part, index) => {
+  const parts = text.split(urlRegex);
+  
+  return parts.map((part, i) => {
     if (part.match(urlRegex)) {
       return (
-        <a key={index} href={part} target="_blank" rel="noopener noreferrer" className="text-blue-300 underline hover:text-blue-200 break-all">
+        <a
+          key={`link-${baseKey}-${i}`}
+          href={part}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-blue-300 underline hover:text-blue-200 break-all"
+        >
           {part}
         </a>
       );
@@ -28,21 +86,24 @@ const parseMessageContent = (content) => {
   });
 };
 
-const MessageBubble = ({ 
-  message, 
-  isMine, 
-  onEdit, 
-  onDelete, 
-  currentUserId,
-  isGroup = false,      // ✅ Новый проп
-  senderName = ''       // ✅ Новый проп
-}) => {
+const getSenderColor = (userId) => {
+  const colors = ['text-blue-400', 'text-green-400', 'text-yellow-400', 'text-red-400', 'text-purple-400', 'text-pink-400', 'text-indigo-400'];
+  return colors[userId % colors.length];
+};
+
+const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGroup = false, senderName = '' }) => {
   const [menuPos, setMenuPos] = useState(null);
 
   const handleContextMenu = (e) => {
     if (isMine) { e.preventDefault(); setMenuPos({ x: e.clientX, y: e.clientY }); }
   };
   const handleClick = () => { if (menuPos) setMenuPos(null); };
+
+  const isImage = message.type === 'image' || (message.file_url && /\.(jpg|jpeg|png|gif|webp)$/i.test(message.file_url));
+  const isVideo = message.type === 'video' || (message.file_url && /\.(mp4|mov|avi|ogg|mkv)$/i.test(message.file_url));
+  const isAudio = message.type === 'audio' || (message.file_url && /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(message.file_url));
+  const isVoice = message.type === 'voice';
+  const isFile = message.type === 'file' && !isImage && !isVideo && !isAudio && !isVoice;
 
   return (
     <>
@@ -51,58 +112,32 @@ const MessageBubble = ({
             isMine ? 'bg-[#2b5278] text-white rounded-2xl rounded-br-none' : 'bg-[#636364] text-white rounded-2xl rounded-bl-none'
           }`}>
           
-          {/* ✅ Имя отправителя (только для групп и только для чужих сообщений) */}
           {isGroup && !isMine && senderName && (
-            <p className={`text-xs font-bold mb-1 ${getSenderColor(message.sender_id)}`}>
-              {senderName}
-            </p>
+            <p className={`text-xs font-bold mb-1 ${getSenderColor(message.sender_id)}`}>{senderName}</p>
           )}
 
-          {/* ГОЛОСОВОЕ */}
-          {message.type === 'voice' && (
-            <div className="my-1">
-              <VoicePlayer url={message.file_url} durationString={message.duration || '0:00'} />
-            </div>
-          )}
+          {isVoice && <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration || '0:00'} /></div>}
+          {isAudio && <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration} /></div>}
+          {isImage && <div className="mb-2 rounded-lg overflow-hidden max-w-[250px]"><img src={message.file_url} alt="" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(message.file_url, '_blank')} /></div>}
+          {isVideo && <div className="mb-2 rounded-lg overflow-hidden max-w-[280px] bg-[#1a1a1a] border border-[#333]"><video src={message.file_url} controls playsInline preload="metadata" className="w-full h-auto max-h-[300px] object-contain" /></div>}
+          {isFile && <a href={message.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-black/20 p-3 rounded-lg mb-2 hover:bg-black/30 transition min-w-[180px]"><span className="text-2xl">📄</span><span className="text-sm underline break-all">{message.content}</span></a>}
 
-          {/* КАРТИНКА */}
-          {message.type === 'image' && (
-            <div className="mb-2 rounded-lg overflow-hidden max-w-[250px]">
-              <img src={message.file_url} alt="img" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(message.file_url, '_blank')} />
-            </div>
-          )}
-
-          {/* ФАЙЛ */}
-          {message.type === 'file' && (
-            <a href={message.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-black/20 p-2 rounded mb-2 hover:bg-black/30 transition">
-              <span className="text-2xl">📄</span>
-              <span className="text-sm underline break-all">{message.content}</span>
-            </a>
-          )}
-
-          {/* ТЕКСТ */}
-          {message.type !== 'voice' && message.content && (
+          {/* ✅ ТЕКСТ С КАРТИНКАМИ-ЭМОДЗИ (Twemoji) */}
+          {message.content && message.type !== 'voice' && !isImage && !isVideo && !isAudio && !isFile && (
             <p className="break-words leading-snug px-2">
-              {parseMessageContent(message.content)}
+              {renderRichContent(message.content)}
             </p>
           )}
 
-          {/* Время и галочки */}
           <div className={`text-[10px] mt-1 flex justify-end items-center gap-1 ${isMine ? 'text-blue-200' : 'text-gray-300'}`}>
             <span className="px-2">{message.time}</span>
-            {isMine && (
-              <span className={`font-bold ${message.is_read ? 'text-blue-400' : 'text-blue-300/70'}`}>
-                {message.is_read ? '✓✓' : '✓'}
-              </span>
-            )}
+            {isMine && <span className={`font-bold ${message.is_read ? 'text-blue-400' : 'text-blue-300/70'}`}>{message.is_read ? '✓✓' : '✓'}</span>}
             {message.is_edited && <span className="text-[9px] italic opacity-70 ml-1">(изм.)</span>}
           </div>
         </div>
       </div>
 
-      {menuPos && (
-        <MessageMenu position={menuPos} currentUserId={currentUserId} onClose={() => setMenuPos(null)} onEdit={onEdit} onDelete={onDelete} initialText={message.content} messageId={message.id} />
-      )}
+      {menuPos && <MessageMenu position={menuPos} currentUserId={currentUserId} onClose={() => setMenuPos(null)} onEdit={onEdit} onDelete={onDelete} initialText={message.content} messageId={message.id} />}
     </>
   );
 };
