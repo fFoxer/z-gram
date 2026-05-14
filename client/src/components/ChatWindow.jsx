@@ -104,8 +104,8 @@ const ChatWindow = () => {
     if (!files || files.length === 0 || !socket || !activeChatId) return;
 
     const file = files[0];
-    if (file.size > 10 * 1024 * 1024) {
-      alert('Файл слишком большой (макс 10МБ)');
+    if (file.size > 300 * 1024 * 1024) {
+      alert('Файл слишком большой (макс 300МБ)');
       return;
     }
 
