@@ -80,7 +80,54 @@ const userSockets = new Map(); // userId -> Set<socketId>
 io.on('connection', (socket) => {
   console.log('✅ Socket connected:', socket.id);
 
-  // Авторизация
+  socket.on('send_message', async (data) => {
+  const { chatId, content, sender_id, time, file_url, type, duration } = data;
+  
+  try {
+    // 1. Сохраняем сообщение
+    const result = await pool.query(
+      'INSERT INTO messages (chat_id, sender_id, content, file_url, type, duration, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+      [chatId, sender_id, content, file_url || null, type || 'text', duration || null]
+    );
+    
+    // 2. Увеличиваем unread_count для ВСЕХ участников, кроме отправителя
+    await pool.query(
+      `UPDATE chat_participants 
+       SET unread_count = unread_count + 1 
+       WHERE chat_id = $1 AND user_id != $2`,
+      [chatId, sender_id]
+    );
+
+    const message = {
+      id: result.rows[0].id,
+      sender_id: result.rows[0].sender_id,
+      content: result.rows[0].content,
+      file_url: result.rows[0].file_url,
+      type: result.rows[0].type,
+      duration: result.rows[0].duration,
+      time: time || new Date(result.rows[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      is_mine: false
+    };
+
+    io.to(`chat_${chatId}`).emit('receive_message', message);
+  } catch (error) {
+    console.error('❌ Error sending message:', error);
+  }
+});
+
+// ✅ Обнуление счетчика при открытии чата
+socket.on('chat_read', async ({ chatId, userId }) => {
+  try {
+    await pool.query(
+      'UPDATE chat_participants SET unread_count = 0 WHERE chat_id = $1 AND user_id = $2',
+      [chatId, userId]
+    );
+    // Можно отправить событие фронтам, что счетчик обнулился (опционально)
+  } catch (error) {
+    console.error('❌ Error marking chat as read:', error);
+  }
+});
+
   socket.on('authenticate', async (userId) => {
     if (!userSockets.has(userId)) userSockets.set(userId, new Set());
     userSockets.get(userId).add(socket.id);
