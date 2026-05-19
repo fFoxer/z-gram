@@ -4,7 +4,7 @@ import axios from 'axios';
 import SearchIcon from '../icons/SearchIcon';
 import CallEndIcon from '../icons/CallEndIcon';
 import MoreVertIcon from '../icons/MoreVertIcon';
-import { IoPeople } from 'react-icons/io5'; // ✅ Для иконки группы
+import { IoPeople } from 'react-icons/io5';
 
 const ChatHeader = ({ socket }) => {
   const activeChatId = useSelector((state) => state.chats?.activeChat);
@@ -12,9 +12,18 @@ const ChatHeader = ({ socket }) => {
   const currentUserId = useSelector((state) => state.auth?.user?.id);
   const chat = chats.find((c) => c.id === activeChatId);
 
-  const [isOnline, setIsOnline] = useState(chat?.is_online || false);
+  const [isOnline, setIsOnline] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [participants, setParticipants] = useState([]); // ✅ Участники группы
+  const [participants, setParticipants] = useState([]);
+
+  // ✅ Обновляем isOnline, когда меняется чат или его is_online из Redux
+  useEffect(() => {
+    if (chat?.type === 'private') {
+      setIsOnline(chat.is_online || false);
+    } else {
+      setIsOnline(false);
+    }
+  }, [chat?.id, chat?.is_online]);
 
   // ✅ Загрузка участников для группового чата
   useEffect(() => {
@@ -35,18 +44,28 @@ const ChatHeader = ({ socket }) => {
   useEffect(() => {
     if (!socket || !chat) return;
 
+    // ✅ Для личных чатов: получаем ID собеседника
+    const otherUserId = chat.type === 'private' ? chat.user_id : null;
+
     const handleStatus = ({ userId, isOnline: status }) => {
-      if (userId !== currentUserId) setIsOnline(status);
+      // ✅ Обновляем статус ТОЛЬКО если это собеседник в личном чате
+      if (chat.type === 'private' && userId === otherUserId) {
+        console.log(`🟢 Статус собеседника ${userId}: ${status ? 'ОНЛАЙН' : 'ОФФЛАЙН'}`);
+        setIsOnline(status);
+      }
     };
 
     const handleTyping = ({ userId, isTyping: typing }) => {
-      if (userId !== currentUserId) setIsTyping(typing);
+      // ✅ "Печатает" тоже только от собеседника
+      if (chat.type === 'private' && userId === otherUserId) {
+        console.log(`✍️ Пользователь ${userId} ${typing ? 'печатает' : 'перестал'}`);
+        setIsTyping(typing);
+      }
     };
 
     // ✅ Слушатель: новый участник в группе
     const handleParticipantAdded = ({ chatId, userId }) => {
       if (chatId === activeChatId && chat?.type === 'group') {
-        // Перезагружаем список участников
         const token = localStorage.getItem('accessToken');
         axios.get(`http://localhost:5000/api/chats/${chatId}/participants`, {
           headers: { Authorization: `Bearer ${token}` }
@@ -63,14 +82,14 @@ const ChatHeader = ({ socket }) => {
       socket.off('user_typing', handleTyping);
       socket.off('participant_added', handleParticipantAdded);
     };
-  }, [socket, chat, activeChatId, currentUserId]);
+  }, [socket, chat, activeChatId]);
 
   if (!chat) return null;
 
   // ✅ Формируем статус-текст
   const getStatusText = () => {
-    if (isTyping) return 'печатает...';
     if (chat.type === 'group') return `${participants.length} участников`;
+    if (isTyping) return 'печатает...';
     return isOnline ? 'онлайн' : 'был(а) недавно';
   };
 
@@ -88,14 +107,13 @@ const ChatHeader = ({ socket }) => {
              )}
           </div>
           {/* 🟢 Точка онлайн (только для личных чатов) */}
-          {chat.type !== 'group' && isOnline && !isTyping && (
+          {chat.type === 'private' && isOnline && !isTyping && (
             <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[#373737]"></div>
           )}
         </div>
         <div>
           <h3 className="text-white font-bold text-base">
             {chat.name}
-            {/* ✅ Бейдж для группы */}
             {chat.type === 'group' && (
               <span className="ml-2 text-gray-400 font-normal text-xs">
                 ({participants.length})
@@ -117,7 +135,6 @@ const ChatHeader = ({ socket }) => {
         <button className="hover:text-white transition">
           <CallEndIcon className="w-5 h-5" />
         </button>
-        {/* ✅ Иконка участников для группы */}
         {chat.type === 'group' && (
           <button className="hover:text-white transition relative" title="Участники">
             <IoPeople size={20} />

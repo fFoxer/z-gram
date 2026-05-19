@@ -47,14 +47,13 @@ const storage = multer.diskStorage({
     cb(null, uploadDir);
   },
   filename: function (req, file, cb) {
-    // Уникальное имя файла: timestamp + оригинальное имя
     cb(null, Date.now() + '-' + file.originalname);
   }
 });
 const upload = multer({ 
   storage,
   limits: { 
-    fileSize: 300 * 1024 * 1024 // 50 МБ (должно совпадать с фронтендом)
+    fileSize: 300 * 1024 * 1024
   }
 });
 
@@ -76,83 +75,124 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// ✅ Глобальная карта онлайн-пользователей (вынесена ИЗ connection)
+// ✅ Карта онлайн-пользователей: userId -> socketId
 const onlineUsers = new Map();
 
-// ✅ Socket.io логика (ОДИН обработчик connection, без вложенности!)
-const userSockets = new Map(); // userId -> Set<socketId>
+// ✅ Функция: получить всех пользователей, которые должны видеть статус userId
+async function getUsersWhoShouldSeeStatus(userId) {
+  try {
+    // Находим ВСЕХ пользователей, у которых есть общие чаты с userId
+    const result = await pool.query(`
+      SELECT DISTINCT cp2.user_id
+      FROM chat_participants cp1
+      JOIN chat_participants cp2 ON cp1.chat_id = cp2.chat_id
+      WHERE cp1.user_id = $1 AND cp2.user_id != $1
+    `, [userId]);
+    
+    return result.rows.map(row => row.user_id);
+  } catch (error) {
+    console.error('❌ Error getting users who should see status:', error);
+    return [];
+  }
+}
 
+// ✅ Функция: отправить статус всем, кто должен его видеть
+async function broadcastStatusToRelevantUsers(userId, isOnline) {
+  try {
+    const viewers = await getUsersWhoShouldSeeStatus(userId);
+    
+    console.log(`📢 Статус пользователя ${userId} (${isOnline ? 'ОНЛАЙН' : 'ОФФЛАЙН'}) видят:`, viewers);
+    
+    for (const viewerId of viewers) {
+      const viewerSocketId = onlineUsers.get(viewerId);
+      if (viewerSocketId) {
+        console.log(`  → Отправка пользователю ${viewerId} (сокет ${viewerSocketId})`);
+        io.to(viewerSocketId).emit('user_status_changed', {
+          userId: userId,
+          isOnline: isOnline
+        });
+      } else {
+        console.log(`  → Пользователь ${viewerId} оффлайн, пропускаю`);
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error broadcasting status:', error);
+  }
+}
+
+// Socket.io логика
 io.on('connection', (socket) => {
   console.log('✅ Socket connected:', socket.id);
 
-  socket.on('send_message', async (data) => {
-  const { chatId, content, sender_id, time, file_url, type, duration } = data;
-  
-  try {
-    const result = await pool.query(
-      'INSERT INTO messages (chat_id, sender_id, content, file_url, type, duration, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
-      [chatId, sender_id, content, file_url || null, type || 'text', duration || null]
-    );
-    
-    const message = {
-      id: result.rows[0].id,
-      sender_id: result.rows[0].sender_id,
-      content: result.rows[0].content,
-      file_url: result.rows[0].file_url,
-      type: result.rows[0].type || 'text',
-      duration: result.rows[0].duration,
-      time: time || new Date(result.rows[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      is_mine: false,
-      chatId: chatId  // ✅ ДОБАВЬ ЭТО ПОЛЕ — оно нужно фронтенду для проверки!
-    };
-
-    io.to(`chat_${chatId}`).emit('receive_message', message);
-  } catch (error) {
-    console.error('❌ Error sending message:', error);
-  }
-});
-
-// ✅ Обнуление счетчика при открытии чата
-socket.on('chat_read', async ({ chatId, userId }) => {
-  try {
-    await pool.query(
-      'UPDATE chat_participants SET unread_count = 0 WHERE chat_id = $1 AND user_id = $2',
-      [chatId, userId]
-    );
-    // Можно отправить событие фронтам, что счетчик обнулился (опционально)
-  } catch (error) {
-    console.error('❌ Error marking chat as read:', error);
-  }
-});
-
+  // Аутентификация пользователя
   socket.on('authenticate', async (userId) => {
-    if (!userSockets.has(userId)) userSockets.set(userId, new Set());
-    userSockets.get(userId).add(socket.id);
-    
-    if (userSockets.get(userId).size === 1) {
-      await pool.query('UPDATE users SET is_online = TRUE WHERE id = $1', [userId]);
-      io.emit('user_status_changed', { userId, isOnline: true });
+    if (userId) {
+      socket.userId = userId;
+      onlineUsers.set(userId, socket.id);
+      
+      console.log(`🔐 Пользователь ${userId} аутентифицирован`);
+      
+      // ✅ Отправляем статус всем, кто должен видеть этого пользователя
+      await broadcastStatusToRelevantUsers(userId, true);
     }
   });
 
-  // Дисконнект (закрытие вкладки)
+  // Дисконнект
   socket.on('disconnect', async () => {
-    for (const [userId, sockets] of userSockets) {
-      if (sockets.has(socket.id)) {
-        sockets.delete(socket.id);
-        if (sockets.size === 0) {
-          userSockets.delete(userId);
-          await pool.query('UPDATE users SET is_online = FALSE, last_seen = NOW() WHERE id = $1', [userId]);
-          io.emit('user_status_changed', { userId, isOnline: false });
-        }
-        break;
-      }
+    if (socket.userId) {
+      const userId = socket.userId;
+      onlineUsers.delete(userId);
+      
+      console.log(`🔌 Пользователь ${userId} отключился`);
+      
+      // ✅ Отправляем оффлайн статус всем, кто должен видеть
+      await broadcastStatusToRelevantUsers(userId, false);
     }
   });
 
+  // Отправка сообщения
+  socket.on('send_message', async (data) => {
+    const { chatId, content, sender_id, time, file_url, type, duration } = data;
+    
+    try {
+      const result = await pool.query(
+        'INSERT INTO messages (chat_id, sender_id, content, file_url, type, duration, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
+        [chatId, sender_id, content, file_url || null, type || 'text', duration || null]
+      );
+      
+      const message = {
+        id: result.rows[0].id,
+        sender_id: result.rows[0].sender_id,
+        content: result.rows[0].content,
+        file_url: result.rows[0].file_url,
+        type: result.rows[0].type || 'text',
+        duration: result.rows[0].duration,
+        time: time || new Date(result.rows[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        is_mine: false,
+        chatId: chatId
+      };
+
+      io.to(`chat_${chatId}`).emit('receive_message', message);
+    } catch (error) {
+      console.error('❌ Error sending message:', error);
+    }
+  });
+
+  // Обнуление счетчика при открытии чата
+  socket.on('chat_read', async ({ chatId, userId }) => {
+    try {
+      await pool.query(
+        'UPDATE chat_participants SET unread_count = 0 WHERE chat_id = $1 AND user_id = $2',
+        [chatId, userId]
+      );
+    } catch (error) {
+      console.error('❌ Error marking chat as read:', error);
+    }
+  });
+
+  // Отметка о прочтении
   socket.on('mark_read', async ({ chatId, userId }) => {
     try {
-      // Обновляем в БД все сообщения чата, которые НЕ от текущего пользователя и ещё не прочитаны
       await pool.query(
         `UPDATE messages 
          SET is_read = TRUE, read_at = NOW() 
@@ -160,8 +200,6 @@ socket.on('chat_read', async ({ chatId, userId }) => {
         [chatId, userId]
       );
 
-      // Оповещаем СОБЕСЕДНИКА (отправителя), что его сообщения прочитаны
-      // Используем socket.to(), чтобы не отправлять событие самому себе
       socket.to(`chat_${chatId}`).emit('messages_read', { chatId, readerId: userId });
       
     } catch (error) {
@@ -169,21 +207,19 @@ socket.on('chat_read', async ({ chatId, userId }) => {
     }
   });
 
+  // Редактирование сообщения
   socket.on('edit_message', async ({ messageId, chatId, newContent, senderId }) => {
     try {
-      // Проверяем, что пользователь — автор сообщения
       const msg = await pool.query('SELECT sender_id FROM messages WHERE id = $1', [messageId]);
       if (msg.rows[0]?.sender_id !== senderId) {
         return socket.emit('error', { message: 'Недостаточно прав' });
       }
 
-      // Обновляем в БД
       await pool.query(
         'UPDATE messages SET content = $1, is_edited = TRUE, edited_at = NOW() WHERE id = $2',
         [newContent, messageId]
       );
 
-      // Рассылаем обновление всем в чате
       io.to(`chat_${chatId}`).emit('message_edited', {
         id: messageId,
         content: newContent,
@@ -197,19 +233,15 @@ socket.on('chat_read', async ({ chatId, userId }) => {
     }
   });
 
-  // ✅ Удаление сообщения
+  // Удаление сообщения
   socket.on('delete_message', async ({ messageId, chatId, senderId }) => {
     try {
-      // Проверяем права (автор или админ чата)
       const msg = await pool.query('SELECT sender_id FROM messages WHERE id = $1', [messageId]);
       if (msg.rows[0]?.sender_id !== senderId) {
         return socket.emit('error', { message: 'Недостаточно прав' });
       }
 
-      // Удаляем из БД
       await pool.query('DELETE FROM messages WHERE id = $1', [messageId]);
-
-      // Рассылаем удаление всем в чате
       io.to(`chat_${chatId}`).emit('message_deleted', { id: messageId });
 
     } catch (error) {
@@ -218,24 +250,20 @@ socket.on('chat_read', async ({ chatId, userId }) => {
     }
   });
 
-  // Явный выход (кнопка "Выйти")
+  // Выход
   socket.on('logout', async (userId) => {
-    if (userSockets.has(userId)) {
-      userSockets.get(userId).delete(socket.id);
-      if (userSockets.get(userId).size === 0) {
-        userSockets.delete(userId);
-        await pool.query('UPDATE users SET is_online = FALSE, last_seen = NOW() WHERE id = $1', [userId]);
-        io.emit('user_status_changed', { userId, isOnline: false });
-      }
+    if (onlineUsers.has(userId)) {
+      onlineUsers.delete(userId);
+      await broadcastStatusToRelevantUsers(userId, false);
     }
   });
 
-  // 3. Статус "печатает..."
+  // Статус "печатает..."
   socket.on('typing', ({ chatId, userId, isTyping }) => {
     socket.to(`chat_${chatId}`).emit('user_typing', { userId, isTyping });
   });
 
-  // 4. Комнаты чатов
+  // Комнаты чатов
   socket.on('join_chat', (chatId) => {
     socket.join(`chat_${chatId}`);
     console.log(`👥 Socket ${socket.id} joined chat_${chatId}`);
@@ -244,47 +272,12 @@ socket.on('chat_read', async ({ chatId, userId }) => {
   socket.on('leave_chat', (chatId) => {
     socket.leave(`chat_${chatId}`);
   });
-
-  // ✅ 5. ОТПРАВКА СООБЩЕНИЯ (ЭТОГО НЕ ХВАТАЛО!)
-    socket.on('send_message', async (data) => {
-  const { chatId, content, sender_id, time, file_url, type, duration } = data;
-  
-  console.log('📨 Получено сообщение:', { type, duration, content }); // ✅ ЛОГ
-
-  try {
-    const result = await pool.query(
-      'INSERT INTO messages (chat_id, sender_id, content, file_url, type, duration, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW()) RETURNING *',
-      [chatId, sender_id, content, file_url || null, type || 'text', duration || null]
-    );
-    
-    console.log('💾 Сохранено в БД:', { 
-      id: result.rows[0].id, 
-      duration: result.rows[0].duration 
-    }); // ✅ ЛОГ
-
-    const message = {
-      id: result.rows[0].id,
-      sender_id: result.rows[0].sender_id,
-      content: result.rows[0].content,
-      file_url: result.rows[0].file_url,
-      type: result.rows[0].type,
-      duration: result.rows[0].duration, // ✅ Возвращаем
-      time: time || new Date(result.rows[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      is_mine: false
-    };
-
-    io.to(`chat_${chatId}`).emit('receive_message', message);
-  } catch (error) {
-    console.error('❌ Error sending message:', error);
-  }
-});
 });
 
 // POST /api/upload - Загрузка файла
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
   
-  // Возвращаем URL для доступа к файлу
   res.json({ url: `http://localhost:5000/uploads/${req.file.filename}` });
 });
 

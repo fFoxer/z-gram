@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { io } from 'socket.io-client';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import { addMessage } from '../store/messageSlice';
-import { incrementUnread, resetUnread } from '../store/chatSlice';
+import { incrementUnread, resetUnread, updateUserStatus } from '../store/chatSlice';
 
 const SOCKET_URL = 'http://localhost:5000';
 
@@ -10,13 +10,12 @@ export const useSocket = (chatId, currentUserId) => {
   const socketRef = useRef(null);
   const dispatch = useDispatch();
   
-  // ✅ Ref для хранения актуального ID чата без пересоздания эффектов
   const activeChatIdRef = useRef(chatId);
   useEffect(() => {
     activeChatIdRef.current = chatId;
   }, [chatId]);
 
-  // 1. Инициализация сокета (запускается 1 раз)
+  // 1. Инициализация сокета
   useEffect(() => {
     if (!socketRef.current) {
       socketRef.current = io(SOCKET_URL, {
@@ -35,14 +34,13 @@ export const useSocket = (chatId, currentUserId) => {
 
     const socket = socketRef.current;
 
-    // ✅ Глобальный слушатель (не отвязывается при смене чата)
+    // Обработка входящих сообщений
     const handleMessage = (message) => {
       const currentActive = activeChatIdRef.current;
       console.log('📨 Пришло сообщение | Чат:', message.chatId, '| Активный:', currentActive);
 
       if (message.chatId === currentActive) {
         dispatch(addMessage(message));
-        // Сразу помечаем как прочитанное
         socket.emit('chat_read', { chatId: currentActive, userId: currentUserId });
         dispatch(resetUnread(currentActive));
       } else {
@@ -50,24 +48,32 @@ export const useSocket = (chatId, currentUserId) => {
       }
     };
 
+    // ✅ Обработка изменения статуса пользователя
+    const handleStatusChange = ({ userId, isOnline }) => {
+      console.log(`🟢 Статус пользователя ${userId}: ${isOnline ? 'онлайн' : 'оффлайн'}`);
+      dispatch(updateUserStatus({ userId, isOnline }));
+    };
+
     socket.on('receive_message', handleMessage);
+    socket.on('user_status_changed', handleStatusChange);
 
     return () => {
       socket.off('receive_message', handleMessage);
+      socket.off('user_status_changed', handleStatusChange);
     };
-  }, [currentUserId, dispatch]); // ✅ chatId убран из зависимостей!
+  }, [currentUserId, dispatch]);
 
-  // 2. Управление комнатами (запускается при смене чата)
+  // 2. Управление комнатами
   useEffect(() => {
     const socket = socketRef.current;
     if (!socket || !chatId) return;
 
     socket.emit('join_chat', chatId);
-    console.log(` Joined chat_${chatId}`);
+    console.log(`👥 Joined chat_${chatId}`);
 
     return () => {
       socket.emit('leave_chat', chatId);
-      console.log(` Left chat_${chatId}`);
+      console.log(`👥 Left chat_${chatId}`);
     };
   }, [chatId]);
 

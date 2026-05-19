@@ -3,8 +3,6 @@ import axios from 'axios';
 
 const API_URL = 'http://localhost:5000/api';
 
-
-
 export const fetchChats = createAsyncThunk(
   'chats/fetchChats',
   async (_, { rejectWithValue }) => {
@@ -38,27 +36,28 @@ export const fetchMessages = createAsyncThunk(
 const chatSlice = createSlice({
   name: 'chats',
   initialState: {
-    list: [],           // ✅ Список чатов
-    messages: [],       // ✅ Сообщения текущего чата
+    list: [],
+    messages: [],
     activeChat: localStorage.getItem('activeChatId') ? parseInt(localStorage.getItem('activeChatId')) : null,
     loading: false,
     error: null,
+    userStatuses: {}
   },
   reducers: {
     incrementUnread: (state, action) => {
-    const chatId = action.payload;
-    const chat = state.list.find(c => c.id === chatId);
-    if (chat) {
-      chat.unread += 1;
-    }
-  },
-  resetUnread: (state, action) => {
-    const chatId = action.payload;
-    const chat = state.list.find(c => c.id === chatId);
-    if (chat) {
-      chat.unread = 0;
-    }
-  },
+      const chatId = action.payload;
+      const chat = state.list.find(c => c.id === chatId);
+      if (chat) {
+        chat.unread += 1;
+      }
+    },
+    resetUnread: (state, action) => {
+      const chatId = action.payload;
+      const chat = state.list.find(c => c.id === chatId);
+      if (chat) {
+        chat.unread = 0;
+      }
+    },
     setActiveChat: (state, action) => {
       state.activeChat = action.payload;
       localStorage.setItem('activeChatId', action.payload);
@@ -72,6 +71,22 @@ const chatSlice = createSlice({
     },
     clearMessages: (state) => {
       state.messages = [];
+    },
+    // ✅ Обновление статуса пользователя
+    updateUserStatus: (state, action) => {
+      const { userId, isOnline } = action.payload;
+      state.userStatuses[userId] = isOnline;
+      
+      // Обновляем is_online в чатах
+      state.list.forEach(chat => {
+        if (chat.type === 'private') {
+          // Проверяем, что это чат с этим пользователем
+          if (chat.user_id === userId) {
+            console.log(`📝 Обновляю статус чата "${chat.name}" (user_id=${userId}): ${isOnline ? 'ОНЛАЙН' : 'ОФФЛАЙН'}`);
+            chat.is_online = isOnline;
+          }
+        }
+      });
     }
   },
   extraReducers: (builder) => {
@@ -97,5 +112,14 @@ const chatSlice = createSlice({
   },
 });
 
-export const { setActiveChat, clearActiveChat, addMessage, clearMessages, incrementUnread, resetUnread } = chatSlice.actions;
-export default chatSlice.reducer; // ✅ Важный экспорт!
+export const { 
+  setActiveChat, 
+  clearActiveChat, 
+  addMessage, 
+  clearMessages, 
+  incrementUnread, 
+  resetUnread,
+  updateUserStatus 
+} = chatSlice.actions;
+
+export default chatSlice.reducer;

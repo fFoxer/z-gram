@@ -6,7 +6,10 @@ const ChatItem = ({ chat, isActive, onClick }) => {
     return colors[name.charCodeAt(0) % colors.length];
   };
 
- return (
+  // ✅ Показываем онлайн только для личных чатов
+  const showOnline = chat.type === 'private' && chat.is_online;
+
+  return (
     <div
       onClick={onClick}
       className={`flex items-center p-2 mb-1 cursor-pointer rounded-lg transition-all ${
@@ -23,7 +26,12 @@ const ChatItem = ({ chat, isActive, onClick }) => {
           </div>
         )}
         
-        {/* ✅ Красный бейдж (поверх аватара или рядом) */}
+        {/* ✅ Зелёная точка только для личных чатов */}
+        {showOnline && !isActive && (
+          <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[#373737]"></div>
+        )}
+        
+        {/* Красный бейдж непрочитанных */}
         {chat.unread > 0 && !isActive && (
           <div className="absolute -bottom-1 -right-1 bg-red-500 text-white text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-[#373737]">
             {chat.unread > 99 ? '99+' : chat.unread}
@@ -42,7 +50,6 @@ const ChatItem = ({ chat, isActive, onClick }) => {
           </span>
         </div>
         
-        {/* ✅ Если есть непрочитанные, текст последнего сообщения жирнее/ярче */}
         <p className={`text-sm truncate ${
           chat.unread > 0 && !isActive ? 'text-white font-medium' : 'text-gray-400'
         }`}>

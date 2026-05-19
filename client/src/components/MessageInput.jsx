@@ -11,12 +11,16 @@ import EmojiPicker from 'emoji-picker-react';
 const MessageInput = ({ socket, onFileUpload }) => {
   const [isRecording, setIsRecording] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [isTyping, setIsTyping] = useState(false); // ✅ Новый стейт
   
   const activeChatId = useSelector((state) => state.chats?.activeChat);
   const currentUserId = useSelector((state) => state.auth?.user?.id);
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
   const savedRangeRef = useRef(null);
+  
+  // ✅ Таймер для debouncing (чтобы не спамить событиями)
+  const typingTimerRef = useRef(null);
 
   useEffect(() => {
     const handleClickOutside = (e) => {
@@ -29,17 +33,51 @@ const MessageInput = ({ socket, onFileUpload }) => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // ✅ Сбор текста с учетом картинок-смайлов
+  // ✅ Отправка события "печатает" на сервер
+  const sendTypingEvent = (typing) => {
+    if (!socket || !activeChatId || !currentUserId) return;
+    
+    // Не отправляем, если статус не изменился
+    if (typing === isTyping) return;
+    
+    setIsTyping(typing);
+    socket.emit('typing', {
+      chatId: activeChatId,
+      userId: currentUserId,
+      isTyping: typing
+    });
+  };
+
+  // ✅ Обработчик ввода: ставим "печатает", сбрасываем таймер
+  const handleInput = () => {
+    if (inputRef.current) {
+      const selection = window.getSelection();
+      if (selection.rangeCount > 0) {
+        savedRangeRef.current = selection.getRangeAt(0).cloneRange();
+      }
+    }
+    
+    // Отправляем "начал печатать"
+    sendTypingEvent(true);
+    
+    // Сбрасываем предыдущий таймер
+    if (typingTimerRef.current) {
+      clearTimeout(typingTimerRef.current);
+    }
+    
+    // Через 1.5 сек без ввода — отправляем "перестал печатать"
+    typingTimerRef.current = setTimeout(() => {
+      sendTypingEvent(false);
+    }, 1500);
+  };
+
   const getContentForSending = () => {
     if (!inputRef.current) return '';
-    
     let text = '';
-    // Проходим по всем дочерним узлам
     inputRef.current.childNodes.forEach(node => {
       if (node.nodeType === Node.TEXT_NODE) {
         text += node.textContent;
       } else if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'IMG') {
-        // Если картинка - берем сохраненный юникод
         text += node.getAttribute('data-unicode') || '';
       }
     });
@@ -52,6 +90,10 @@ const MessageInput = ({ socket, onFileUpload }) => {
 
     const content = getContentForSending();
     if (!content || !socket || !activeChatId) return;
+    
+    // ✅ Перед отправкой — сбрасываем "печатает"
+    sendTypingEvent(false);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     socket.emit('send_message', { 
@@ -114,15 +156,13 @@ const MessageInput = ({ socket, onFileUpload }) => {
     const range = selection.getRangeAt(0);
     
     const img = document.createElement('img');
-    const code = emojiData.unified || emojiData.emoji.codePointAt(0).toString(16).toUpperCase();
+    const code = emojiData.unified || emojiData.emoji.codePointAt(0).toString(16);
     img.src = `https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/svg/${code}.svg`;
     
-    // ✅ Сохраняем сам эмодзи-символ в атрибут
     img.setAttribute('data-unicode', emojiData.emoji);
-    
     img.className = 'inline w-5 h-5 align-text-bottom mx-[1px] select-none object-contain';
     img.draggable = false;
-    img.alt = ''; // Пустой alt, чтобы не мешал
+    img.alt = '';
     
     range.deleteContents();
     range.insertNode(img);
@@ -134,29 +174,26 @@ const MessageInput = ({ socket, onFileUpload }) => {
     selection.addRange(newRange);
     
     savedRangeRef.current = newRange.cloneRange();
+    
+    // ✅ После вставки эмодзи — тоже считаем это "печатает"
+    sendTypingEvent(true);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => sendTypingEvent(false), 1500);
   };
 
-  const handleInput = () => {
-    if (inputRef.current) {
-      const selection = window.getSelection();
-      if (selection.rangeCount > 0) {
-        savedRangeRef.current = selection.getRangeAt(0).cloneRange();
-      }
-    }
-  };
-
-  // Проверка наличия контента
-  const [hasContent, setHasContent] = useState(false);
+  // ✅ Очистка таймера при размонтировании
   useEffect(() => {
-    const check = () => {
-      if (inputRef.current) {
-        const text = inputRef.current.innerText.trim();
-        const images = inputRef.current.querySelectorAll('img').length;
-        setHasContent(text.length > 0 || images > 0);
-      }
+    return () => {
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     };
-    check();
-  }, [showEmojiPicker, isRecording]);
+  }, []);
+
+  const hasContent = () => {
+    if (!inputRef.current) return false;
+    const text = inputRef.current.innerText.trim();
+    const images = inputRef.current.querySelectorAll('img').length;
+    return text.length > 0 || images > 0;
+  };
 
   return (
     <div className="h-[60px] bg-[#373737] border-t border-[#222] flex items-center px-4 gap-3 relative">
@@ -170,13 +207,11 @@ const MessageInput = ({ socket, onFileUpload }) => {
           <div
             ref={inputRef}
             contentEditable
-            onInput={() => {
-               handleInput();
-               if(inputRef.current) {
-                 const text = inputRef.current.innerText.trim();
-                 const images = inputRef.current.querySelectorAll('img').length;
-                 setHasContent(text.length > 0 || images > 0);
-               }
+            onInput={handleInput}
+            onBlur={() => {
+              // ✅ Если поле потеряло фокус — перестал печатать
+              sendTypingEvent(false);
+              if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -221,7 +256,7 @@ const MessageInput = ({ socket, onFileUpload }) => {
               </div>
             )}
 
-            {hasContent ? (
+            {hasContent() ? (
               <button 
                 type="button" 
                 onMouseDown={(e) => e.preventDefault()}
