@@ -1,65 +1,113 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { io } from 'socket.io-client';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { addMessage } from '../store/messageSlice';
-import { incrementUnread, resetUnread, updateUserStatus } from '../store/chatSlice';
+import { fetchChats, incrementUnread, resetUnread, setUserStatus, updateChatPreview, updateChatMeta } from '../store/chatSlice';
+import { SOCKET_URL } from '../services/endpointConfig';
 
-const SOCKET_URL = 'http://localhost:5000';
+
+const getLastMessageText = (message) => {
+  if (message.type === 'voice') return '🎤 Голосовое';
+  if (message.type === 'image') return '🖼 Изображение';
+  if (message.type === 'video') return '📹 Видео';
+  if (message.type === 'file') return '📎 Файл';
+  return message.content || '';
+};
 
 export const useSocket = (chatId, currentUserId) => {
+  const [socket, setSocket] = useState(null);
   const socketRef = useRef(null);
+  const currentUserIdRef = useRef(currentUserId);
   const dispatch = useDispatch();
+  const chatListRef = useRef([]);
+  const chatList = useSelector((state) => state.chats.list);
+
+  useEffect(() => {
+    chatListRef.current = chatList;
+  }, [chatList]);
   
   const activeChatIdRef = useRef(chatId);
   useEffect(() => {
     activeChatIdRef.current = chatId;
   }, [chatId]);
 
+  useEffect(() => {
+    currentUserIdRef.current = currentUserId;
+  }, [currentUserId]);
+
   // 1. Инициализация сокета
   useEffect(() => {
     if (!socketRef.current) {
-      socketRef.current = io(SOCKET_URL, {
+      const newSocket = io(SOCKET_URL, {
         transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionAttempts: 3,
       });
 
-      socketRef.current.on('connect', () => {
+      socketRef.current = newSocket;
+      setSocket(newSocket);
+
+      newSocket.on('connect', () => {
         console.log('✅ Socket connected');
-        if (currentUserId) {
-          socketRef.current.emit('authenticate', currentUserId);
+        if (currentUserIdRef.current) {
+          newSocket.emit('authenticate', currentUserIdRef.current);
         }
       });
+    } else if (currentUserId && socketRef.current.connected) {
+      socketRef.current.emit('authenticate', currentUserId);
     }
 
-    const socket = socketRef.current;
+    const activeSocket = socketRef.current;
+    if (!activeSocket) return;
 
     // Обработка входящих сообщений
     const handleMessage = (message) => {
       const currentActive = activeChatIdRef.current;
       console.log('📨 Пришло сообщение | Чат:', message.chatId, '| Активный:', currentActive);
 
+      const chatExists = chatListRef.current.some(c => c.id === message.chatId);
+
+      if (!chatExists) {
+        // Новый чат — перезагружаем список полностью
+        dispatch(fetchChats());
+      } else {
+        // Обновляем превью (последнее сообщение + время) и поднимаем чат наверх
+        dispatch(updateChatPreview({
+          chatId: message.chatId,
+          lastMessage: getLastMessageText(message),
+          time: message.time,
+        }));
+      }
+
       if (message.chatId === currentActive) {
         dispatch(addMessage(message));
-        socket.emit('chat_read', { chatId: currentActive, userId: currentUserId });
+        activeSocket.emit('chat_read', { chatId: currentActive, userId: currentUserId });
         dispatch(resetUnread(currentActive));
       } else {
         dispatch(incrementUnread(message.chatId));
       }
     };
 
-    // ✅ Обработка изменения статуса пользователя
     const handleStatusChange = ({ userId, isOnline }) => {
-      console.log(`🟢 Статус пользователя ${userId}: ${isOnline ? 'онлайн' : 'оффлайн'}`);
-      dispatch(updateUserStatus({ userId, isOnline }));
+      dispatch(setUserStatus({ userId, isOnline }));
     };
 
-    socket.on('receive_message', handleMessage);
-    socket.on('user_status_changed', handleStatusChange);
+    const handleProfileUpdated = ({ userId, avatar_url, full_name, username }) => {
+      dispatch(updateChatMeta({
+        userId,
+        avatar: avatar_url,
+        name: full_name || username,
+      }));
+    };
+
+    activeSocket.on('receive_message', handleMessage);
+    activeSocket.on('user_status_changed', handleStatusChange);
+    activeSocket.on('user_profile_updated', handleProfileUpdated);
 
     return () => {
-      socket.off('receive_message', handleMessage);
-      socket.off('user_status_changed', handleStatusChange);
+      activeSocket.off('receive_message', handleMessage);
+      activeSocket.off('user_status_changed', handleStatusChange);
+      activeSocket.off('user_profile_updated', handleProfileUpdated);
     };
   }, [currentUserId, dispatch]);
 
@@ -77,5 +125,5 @@ export const useSocket = (chatId, currentUserId) => {
     };
   }, [chatId]);
 
-  return socketRef.current;
+  return socket;
 };

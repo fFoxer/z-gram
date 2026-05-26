@@ -12,23 +12,43 @@ router.get('/', authMiddleware, async (req, res) => {
     const userId = req.user.id;
 
     const result = await pool.query(
-      `SELECT 
+      `SELECT
         c.id,
         c.type,
-        c.avatar_url,
         c.created_at,
-        -- Название чата (твой старый код CASE WHEN...)
-        CASE 
+        -- Название: для приватных чатов — имя собеседника
+        CASE
           WHEN c.type = 'private' THEN (
             SELECT COALESCE(u.full_name, u.username, 'Пользователь')
             FROM users u
             JOIN chat_participants cp2 ON u.id = cp2.user_id
-            WHERE cp2.chat_id = c.id 
-            AND cp2.user_id != $1
+            WHERE cp2.chat_id = c.id AND cp2.user_id != $1
             LIMIT 1
           )
           ELSE c.name
         END as name,
+        -- Аватар: для приватных чатов — аватар собеседника
+        CASE
+          WHEN c.type = 'private' THEN (
+            SELECT u.avatar_url
+            FROM users u
+            JOIN chat_participants cp2 ON u.id = cp2.user_id
+            WHERE cp2.chat_id = c.id AND cp2.user_id != $1
+            LIMIT 1
+          )
+          ELSE c.avatar_url
+        END as avatar_url,
+        -- ID собеседника для приватного чата
+        CASE
+          WHEN c.type = 'private' THEN (
+            SELECT u.id
+            FROM users u
+            JOIN chat_participants cp2 ON u.id = cp2.user_id
+            WHERE cp2.chat_id = c.id AND cp2.user_id != $1
+            LIMIT 1
+          )
+          ELSE NULL
+        END as user_id,
         
         (SELECT content FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message,
         (SELECT created_at FROM messages WHERE chat_id = c.id ORDER BY created_at DESC LIMIT 1) as last_message_time,
@@ -49,6 +69,7 @@ router.get('/', authMiddleware, async (req, res) => {
       name: chat.name || 'Без названия',
       avatar: chat.avatar_url,
       type: chat.type,
+      userId: chat.user_id || null,
       last_message: chat.last_message || 'Нет сообщений',
       time: chat.last_message_time 
         ? new Date(chat.last_message_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })

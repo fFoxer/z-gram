@@ -1,7 +1,14 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
+import { API_URL } from '../services/endpointConfig';
 
-const API_URL = 'http://localhost:5000/api';
+const loadFromStorage = (key, fallback) => {
+  try {
+    const val = localStorage.getItem(key);
+    return val !== null ? JSON.parse(val) : fallback;
+  } catch { return fallback; }
+};
+
 
 export const fetchChats = createAsyncThunk(
   'chats/fetchChats',
@@ -41,7 +48,8 @@ const chatSlice = createSlice({
     activeChat: localStorage.getItem('activeChatId') ? parseInt(localStorage.getItem('activeChatId')) : null,
     loading: false,
     error: null,
-    userStatuses: {}
+    userStatuses: {},
+    pinnedChats: loadFromStorage('pinnedChats', []),
   },
   reducers: {
     incrementUnread: (state, action) => {
@@ -72,21 +80,40 @@ const chatSlice = createSlice({
     clearMessages: (state) => {
       state.messages = [];
     },
-    // ✅ Обновление статуса пользователя
-    updateUserStatus: (state, action) => {
+    setUserStatus: (state, action) => {
       const { userId, isOnline } = action.payload;
-      state.userStatuses[userId] = isOnline;
-      
-      // Обновляем is_online в чатах
+      state.userStatuses[String(userId)] = isOnline;
+    },
+    togglePinChat: (state, action) => {
+      const chatId = action.payload;
+      const idx = state.pinnedChats.indexOf(chatId);
+      if (idx !== -1) state.pinnedChats.splice(idx, 1);
+      else state.pinnedChats.push(chatId);
+      localStorage.setItem('pinnedChats', JSON.stringify(state.pinnedChats));
+    },
+    updateChatMeta: (state, action) => {
+      const { userId, avatar, name } = action.payload;
       state.list.forEach(chat => {
-        if (chat.type === 'private') {
-          // Проверяем, что это чат с этим пользователем
-          if (chat.user_id === userId) {
-            console.log(`📝 Обновляю статус чата "${chat.name}" (user_id=${userId}): ${isOnline ? 'ОНЛАЙН' : 'ОФФЛАЙН'}`);
-            chat.is_online = isOnline;
-          }
+        if (chat.type === 'private' && String(chat.userId) === String(userId)) {
+          if (avatar !== undefined) chat.avatar = avatar;
+          if (name)                 chat.name   = name;
         }
       });
+    },
+    reorderPinned: (state, action) => {
+      state.pinnedChats = action.payload;
+      localStorage.setItem('pinnedChats', JSON.stringify(action.payload));
+    },
+    // Обновляет превью чата (последнее сообщение + время) и поднимает его наверх
+    updateChatPreview: (state, action) => {
+      const { chatId, lastMessage, time } = action.payload;
+      const idx = state.list.findIndex(c => c.id === chatId);
+      if (idx !== -1) {
+        state.list[idx].last_message = lastMessage;
+        state.list[idx].time = time;
+        const [chat] = state.list.splice(idx, 1);
+        state.list.unshift(chat);
+      }
     }
   },
   extraReducers: (builder) => {
@@ -112,14 +139,18 @@ const chatSlice = createSlice({
   },
 });
 
-export const { 
-  setActiveChat, 
-  clearActiveChat, 
-  addMessage, 
-  clearMessages, 
-  incrementUnread, 
+export const {
+  setActiveChat,
+  clearActiveChat,
+  addMessage,
+  clearMessages,
+  incrementUnread,
   resetUnread,
-  updateUserStatus 
+  setUserStatus,
+  updateChatPreview,
+  updateChatMeta,
+  togglePinChat,
+  reorderPinned,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

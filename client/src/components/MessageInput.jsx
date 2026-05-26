@@ -6,6 +6,7 @@ import MicrophoneIcon from '../icons/MicrophoneIcon';
 import MoodIcon from '../icons/MoodIcon';
 import VoiceRecorder from './VoiceRecorder';
 import axios from 'axios';
+import { API_URL } from '../services/endpointConfig';
 import EmojiPicker from 'emoji-picker-react';
 
 const MessageInput = ({ socket, onFileUpload }) => {
@@ -119,7 +120,7 @@ const MessageInput = ({ socket, onFileUpload }) => {
       const formData = new FormData();
       const file = new File([audioBlob], `voice_${Date.now()}.webm`, { type: 'audio/webm' });
       formData.append('file', file);
-      const res = await axios.post('http://localhost:5000/api/upload', formData, {
+      const res = await axios.post(`${API_URL}/upload`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       socket.emit('send_message', {

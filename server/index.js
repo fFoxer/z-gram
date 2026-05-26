@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const { Server } = require('socket.io');
 require('dotenv').config();
 
@@ -17,25 +20,52 @@ const usersRoutes = require('./routes/usersRoutes');
 const app = express();
 
 app.use(cors({
-  origin: 'http://localhost:3000',
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-const server = http.createServer(app);
+const useHttps = process.env.HTTPS === 'true' || (process.env.SSL_CRT_FILE && process.env.SSL_KEY_FILE);
+let server;
+let protocol = 'http';
+
+if (useHttps) {
+  try {
+    const certPath = process.env.SSL_CRT_FILE && path.resolve(__dirname, process.env.SSL_CRT_FILE);
+    const keyPath = process.env.SSL_KEY_FILE && path.resolve(__dirname, process.env.SSL_KEY_FILE);
+
+    if (certPath && keyPath && fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+      const sslOptions = {
+        cert: fs.readFileSync(certPath),
+        key: fs.readFileSync(keyPath),
+      };
+
+      server = https.createServer(sslOptions, app);
+      protocol = 'https';
+      console.log(`🔐 HTTPS enabled with cert=${certPath} key=${keyPath}`);
+    } else {
+      throw new Error('SSL certificate or key file not found');
+    }
+  } catch (err) {
+    console.error('❌ Failed to enable HTTPS, falling back to HTTP:', err.message);
+  }
+}
+
+if (!server) {
+  server = http.createServer(app);
+}
 
 // Socket.io setup
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:3000",
-    methods: ["GET", "POST"]
+    origin: true,
+    methods: ["GET", "POST"],
+    credentials: true
   }
 });
 
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 
 // Убедись, что папка uploads существует
 const uploadDir = path.join(__dirname, 'uploads');
@@ -75,6 +105,9 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Передаём io в маршруты через app
+app.set('io', io);
+
 // ✅ Карта онлайн-пользователей: userId -> socketId
 const onlineUsers = new Map();
 
@@ -104,7 +137,7 @@ async function broadcastStatusToRelevantUsers(userId, isOnline) {
     console.log(`📢 Статус пользователя ${userId} (${isOnline ? 'ОНЛАЙН' : 'ОФФЛАЙН'}) видят:`, viewers);
     
     for (const viewerId of viewers) {
-      const viewerSocketId = onlineUsers.get(viewerId);
+      const viewerSocketId = onlineUsers.get(String(viewerId));
       if (viewerSocketId) {
         console.log(`  → Отправка пользователю ${viewerId} (сокет ${viewerSocketId})`);
         io.to(viewerSocketId).emit('user_status_changed', {
@@ -120,6 +153,24 @@ async function broadcastStatusToRelevantUsers(userId, isOnline) {
   }
 }
 
+// ✅ Функция: отправить текущему сокету статусы всех релевантных онлайн пользователей
+async function sendRelevantOnlineStatusesToSocket(userId, socket) {
+  try {
+    const relevantUserIds = await getUsersWhoShouldSeeStatus(userId);
+    for (const relevantId of relevantUserIds) {
+      const relevantKey = String(relevantId);
+      if (onlineUsers.has(relevantKey)) {
+        socket.emit('user_status_changed', {
+          userId: relevantKey,
+          isOnline: true
+        });
+      }
+    }
+  } catch (error) {
+    console.error('❌ Error sending relevant online statuses:', error);
+  }
+}
+
 // Socket.io логика
 io.on('connection', (socket) => {
   console.log('✅ Socket connected:', socket.id);
@@ -127,13 +178,15 @@ io.on('connection', (socket) => {
   // Аутентификация пользователя
   socket.on('authenticate', async (userId) => {
     if (userId) {
-      socket.userId = userId;
-      onlineUsers.set(userId, socket.id);
+      socket.userId = String(userId);
+      onlineUsers.set(socket.userId, socket.id);
       
-      console.log(`🔐 Пользователь ${userId} аутентифицирован`);
+      console.log(`🔐 Пользователь ${socket.userId} аутентифицирован`);
       
       // ✅ Отправляем статус всем, кто должен видеть этого пользователя
-      await broadcastStatusToRelevantUsers(userId, true);
+      await broadcastStatusToRelevantUsers(socket.userId, true);
+      // ✅ Отправляем новому подключению статусы уже онлайн собеседников
+      await sendRelevantOnlineStatusesToSocket(socket.userId, socket);
     }
   });
 
@@ -177,7 +230,52 @@ io.on('connection', (socket) => {
       console.error('❌ Error sending message:', error);
     }
   });
+    socket.on('call-user', async ({ userToCall, offer, signalData, video }) => {
+  console.log('socket event call-user', { from: socket.userId, userToCall, video, signalDataExists: !!signalData, offerExists: !!offer });
+  // signalData содержит SDP (описание соединения)
+  const targetSocketId = onlineUsers.get(String(userToCall));
+  if (targetSocketId) {
+    io.to(targetSocketId).emit('call-made', {
+      signal: signalData,
+      from: socket.userId,
+      video: video !== false
+    });
+  } else {
+    console.warn('call-user target not online', { userToCall });
+  }
+});
 
+// 2. Ответ на звонок
+socket.on('make-answer', async ({ to, signalData }) => {
+  console.log('socket event make-answer', { from: socket.userId, to, signalDataExists: !!signalData });
+  const targetSocketId = onlineUsers.get(String(to));
+  if (targetSocketId) {
+    io.to(targetSocketId).emit('answer-made', {
+      signal: signalData,
+      from: socket.userId
+    });
+  } else {
+    console.warn('make-answer target not online', { to });
+  }
+});
+
+// 3. Отклонение звонка
+socket.on('reject-call', async ({ to }) => {
+  console.log('socket event reject-call', { from: socket.userId, to });
+  const targetSocketId = onlineUsers.get(String(to));
+  if (targetSocketId) {
+    io.to(targetSocketId).emit('call-rejected');
+  }
+});
+
+// 4. Завершение звонка
+socket.on('end-call', async ({ to }) => {
+  console.log('socket event end-call', { from: socket.userId, to });
+  const targetSocketId = onlineUsers.get(String(to));
+  if (targetSocketId) {
+    io.to(targetSocketId).emit('call-ended');
+  }
+});
   // Обнуление счетчика при открытии чата
   socket.on('chat_read', async ({ chatId, userId }) => {
     try {
@@ -252,9 +350,10 @@ io.on('connection', (socket) => {
 
   // Выход
   socket.on('logout', async (userId) => {
-    if (onlineUsers.has(userId)) {
-      onlineUsers.delete(userId);
-      await broadcastStatusToRelevantUsers(userId, false);
+    const userKey = String(userId);
+    if (onlineUsers.has(userKey)) {
+      onlineUsers.delete(userKey);
+      await broadcastStatusToRelevantUsers(userKey, false);
     }
   });
 
@@ -277,14 +376,17 @@ io.on('connection', (socket) => {
 // POST /api/upload - Загрузка файла
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
-  
-  res.json({ url: `http://localhost:5000/uploads/${req.file.filename}` });
+
+  const host = req.get('host');
+  const protocol = req.protocol;
+  res.json({ url: `${protocol}://${host}/uploads/${req.file.filename}` });
 });
 
 const PORT = process.env.PORT || 5000;
+const HOST = process.env.HOST || '0.0.0.0';
 
-server.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`🚀 Server running on ${protocol}://${HOST === '0.0.0.0' ? '0.0.0.0' : HOST}:${PORT}`);
   console.log(`📡 Socket.IO ready`);
 });
 

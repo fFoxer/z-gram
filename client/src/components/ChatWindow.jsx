@@ -1,24 +1,29 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useMemo } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { fetchMessages, clearMessages, updateMessage, deleteMessage } from '../store/messageSlice';
 import ChatHeader from './ChatHeader';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
-import { useSocket } from '../hooks/useSocket';
 import axios from 'axios';
+import { API_URL } from '../services/endpointConfig';
 import { incrementUnread, resetUnread } from '../store/chatSlice';
 
-const ChatWindow = () => {
+// ✅ 1. Принимаем onStartCall и socket в пропсах
+const ChatWindow = ({ socket, onStartCall, isCallReady }) => {
   const dispatch = useDispatch();
+  
   const activeChatId = useSelector((state) => state.chats?.activeChat);
   const { list: messages, loading } = useSelector((state) => state.messages || {});
   const currentUserId = useSelector((state) => state.auth?.user?.id);
   const chats = useSelector((state) => state.chats?.list) || [];
   
   const messagesEndRef = useRef(null);
-  const socket = useSocket(activeChatId, currentUserId);
   const hasMarkedRead = useRef(false);
-  
+
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatchIdx, setCurrentMatchIdx] = useState(0);
+
   // ✅ Участники группового чата
   const [participants, setParticipants] = useState([]);
 
@@ -49,7 +54,7 @@ const ChatWindow = () => {
     }
 
     const token = localStorage.getItem('accessToken');
-    axios.get(`http://localhost:5000/api/chats/${activeChatId}/participants`, {
+    axios.get(`${API_URL}/chats/${activeChatId}/participants`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     .then(res => setParticipants(res.data))
@@ -82,7 +87,7 @@ const ChatWindow = () => {
       if (chatId === activeChatId) {
         // Перезагружаем участников при добавлении нового
         const token = localStorage.getItem('accessToken');
-        axios.get(`http://localhost:5000/api/chats/${chatId}/participants`, {
+        axios.get(`${API_URL}/chats/${chatId}/participants`, {
           headers: { Authorization: `Bearer ${token}` }
         }).then(res => setParticipants(res.data));
       }
@@ -113,7 +118,7 @@ const ChatWindow = () => {
     const formData = new FormData();
     formData.append('file', file);
 
-    const res = await axios.post('http://localhost:5000/api/upload', formData, {
+    const res = await axios.post(`${API_URL}/upload`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' }
     });
 
@@ -176,10 +181,46 @@ const ChatWindow = () => {
     socket.emit('delete_message', { messageId, chatId: activeChatId, senderId: currentUserId });
   };
 
-  // Автоскролл
+  // Сброс поиска при смене чата
   useEffect(() => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setCurrentMatchIdx(0);
+  }, [activeChatId]);
+
+  // Список ID сообщений, совпадающих с поисковым запросом
+  const matchingMsgIds = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return messages
+      .filter(m => m.content && m.content.toLowerCase().includes(q))
+      .map(m => m.id);
+  }, [messages, searchQuery]);
+
+  const currentMatchId = matchingMsgIds.length > 0 ? matchingMsgIds[currentMatchIdx] : null;
+
+  // Скролл к текущему совпадению
+  useEffect(() => {
+    if (!currentMatchId) return;
+    document.getElementById(`msg-${currentMatchId}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [currentMatchId]);
+
+  const handleSearchNavigate = (dir) => {
+    if (matchingMsgIds.length === 0) return;
+    setCurrentMatchIdx(prev => (prev + dir + matchingMsgIds.length) % matchingMsgIds.length);
+  };
+
+  const handleSearchClose = () => {
+    setIsSearchOpen(false);
+    setSearchQuery('');
+    setCurrentMatchIdx(0);
+  };
+
+  // Автоскролл (только когда поиск закрыт)
+  useEffect(() => {
+    if (isSearchOpen) return;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isSearchOpen]);
 
   // ✅ Определяем, является ли текущий чат групповым
   const currentChat = chats.find(c => c.id === activeChatId);
@@ -202,7 +243,19 @@ const ChatWindow = () => {
         </div>
       )}
 
-      <ChatHeader socket={socket} />
+      <ChatHeader
+        socket={socket}
+        onStartCall={onStartCall}
+        isCallReady={isCallReady}
+        isSearchOpen={isSearchOpen}
+        searchQuery={searchQuery}
+        matchCount={matchingMsgIds.length}
+        currentMatchIdx={currentMatchIdx}
+        onSearchOpen={() => setIsSearchOpen(true)}
+        onSearchClose={handleSearchClose}
+        onSearchChange={(q) => { setSearchQuery(q); setCurrentMatchIdx(0); }}
+        onSearchNavigate={handleSearchNavigate}
+      />
 
       <div className="flex-1 overflow-y-auto p-4 space-y-3">
         {loading && messages.length === 0 ? (
@@ -211,13 +264,12 @@ const ChatWindow = () => {
            <div className="flex justify-center mt-10 text-gray-400 text-sm">Нет сообщений</div>
         ) : (
           messages.map((msg) => {
-            // ✅ Находим имя отправителя для групповых чатов
             const sender = participants.find(p => p.id === msg.sender_id);
             const senderName = sender?.full_name || sender?.username || 'Пользователь';
-            
             return (
               <MessageBubble
                 key={msg.id}
+                msgId={`msg-${msg.id}`}
                 message={msg}
                 isMine={msg.sender_id === currentUserId}
                 currentUserId={currentUserId}
@@ -225,6 +277,8 @@ const ChatWindow = () => {
                 senderName={senderName}
                 onEdit={handleEditMessage}
                 onDelete={handleDeleteMessage}
+                searchQuery={searchQuery}
+                isCurrentMatch={currentMatchId === msg.id}
               />
             );
           })

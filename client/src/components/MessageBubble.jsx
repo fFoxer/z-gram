@@ -91,7 +91,18 @@ const getSenderColor = (userId) => {
   return colors[userId % colors.length];
 };
 
-const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGroup = false, senderName = '' }) => {
+const highlightText = (text, query) => {
+  if (!query?.trim() || !text) return text;
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const parts = text.split(new RegExp(`(${escaped})`, 'gi'));
+  return parts.map((part, i) =>
+    part.toLowerCase() === query.toLowerCase()
+      ? <mark key={i} className="bg-yellow-400/90 text-black rounded px-0.5">{part}</mark>
+      : part
+  );
+};
+
+const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGroup = false, senderName = '', searchQuery = '', isCurrentMatch = false, msgId }) => {
   const [menuPos, setMenuPos] = useState(null);
 
   const handleContextMenu = (e) => {
@@ -99,33 +110,69 @@ const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGro
   };
   const handleClick = () => { if (menuPos) setMenuPos(null); };
 
+  const isVoice = message.type === 'voice';
   const isImage = message.type === 'image' || (message.file_url && /\.(jpg|jpeg|png|gif|webp)$/i.test(message.file_url));
   const isVideo = message.type === 'video' || (message.file_url && /\.(mp4|mov|avi|ogg|mkv)$/i.test(message.file_url));
-  const isAudio = message.type === 'audio' || (message.file_url && /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(message.file_url));
-  const isVoice = message.type === 'voice';
+  const isAudio = !isVoice && (message.type === 'audio' || (message.file_url && /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(message.file_url)));
   const isFile = message.type === 'file' && !isImage && !isVideo && !isAudio && !isVoice;
+  const downloadedName = message.content || message.file_url?.split('/').pop();
+
+  const renderDownloadLink = () => {
+    if (!message.file_url || isVoice) return null;
+    return (
+      <a
+        href={message.file_url}
+        download={downloadedName}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-xs text-blue-200 underline hover:text-blue-100 block mt-1 break-all"
+      >
+        Скачать {downloadedName}
+      </a>
+    );
+  };
 
   return (
     <>
-      <div className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 group`} onContextMenu={handleContextMenu} onClick={handleClick}>
-        <div className={`max-w-[65%] px-2 py-2 text-[15px] relative shadow-sm select-none ${
+      <div id={msgId} className={`flex ${isMine ? 'justify-end' : 'justify-start'} mb-1 group`} onContextMenu={handleContextMenu} onClick={handleClick}>
+        <div className={`max-w-[65%] px-2 py-2 text-[15px] relative shadow-sm select-none transition-shadow ${
             isMine ? 'bg-[#2b5278] text-white rounded-2xl rounded-br-none' : 'bg-[#636364] text-white rounded-2xl rounded-bl-none'
-          }`}>
+          } ${isCurrentMatch ? 'ring-2 ring-yellow-400 ring-offset-2 ring-offset-[#373737]' : ''}`}>
           
           {isGroup && !isMine && senderName && (
             <p className={`text-xs font-bold mb-1 ${getSenderColor(message.sender_id)}`}>{senderName}</p>
           )}
 
-          {isVoice && <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration || '0:00'} /></div>}
-          {isAudio && <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration} /></div>}
-          {isImage && <div className="mb-2 rounded-lg overflow-hidden max-w-[250px]"><img src={message.file_url} alt="" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(message.file_url, '_blank')} /></div>}
-          {isVideo && <div className="mb-2 rounded-lg overflow-hidden max-w-[280px] bg-[#1a1a1a] border border-[#333]"><video src={message.file_url} controls playsInline preload="metadata" className="w-full h-auto max-h-[300px] object-contain" /></div>}
-          {isFile && <a href={message.file_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-black/20 p-3 rounded-lg mb-2 hover:bg-black/30 transition min-w-[180px]"><span className="text-2xl">📄</span><span className="text-sm underline break-all">{message.content}</span></a>}
+          {isImage && (
+            <>
+              <div className="mb-2 rounded-lg overflow-hidden max-w-[250px]"><img src={message.file_url} alt="" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(message.file_url, '_blank')} /></div>
+              {renderDownloadLink()}
+            </>
+          )}
+          {isVideo && (
+            <>
+              <div className="mb-2 rounded-lg overflow-hidden max-w-[280px] bg-[#1a1a1a] border border-[#333]"><video src={message.file_url} controls playsInline preload="metadata" className="w-full h-auto max-h-[300px] object-contain" /></div>
+              {renderDownloadLink()}
+            </>
+          )}
+          {isAudio && (
+            <>
+              <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration} /></div>
+              {renderDownloadLink()}
+            </>
+          )}
+          {isVoice && (
+            <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration || '0:00'} /></div>
+          )}
+          {isFile && (
+            <>
+              <a href={message.file_url} download={downloadedName} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-black/20 p-3 rounded-lg mb-2 hover:bg-black/30 transition min-w-[180px]"><span className="text-2xl">📄</span><span className="text-sm underline break-all">{message.content}</span></a>
+            </>
+          )}
 
-          {/* ✅ ТЕКСТ С КАРТИНКАМИ-ЭМОДЗИ (Twemoji) */}
           {message.content && message.type !== 'voice' && !isImage && !isVideo && !isAudio && !isFile && (
             <p className="break-words leading-snug px-2">
-              {renderRichContent(message.content)}
+              {searchQuery ? highlightText(message.content, searchQuery) : renderRichContent(message.content)}
             </p>
           )}
 

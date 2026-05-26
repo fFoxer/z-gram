@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
+import { API_URL } from '../services/endpointConfig';
 
-const API_URL = 'http://localhost:5000/api';
 
 export const fetchMessages = createAsyncThunk(
   'messages/fetchMessages',

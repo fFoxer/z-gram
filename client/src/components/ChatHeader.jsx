@@ -2,96 +2,142 @@ import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import axios from 'axios';
 import SearchIcon from '../icons/SearchIcon';
+import { API_URL } from '../services/endpointConfig';
 import CallEndIcon from '../icons/CallEndIcon';
 import MoreVertIcon from '../icons/MoreVertIcon';
-import { IoPeople } from 'react-icons/io5';
+import { IoPeople, IoVideocam, IoArrowBack, IoChevronUp, IoChevronDown } from 'react-icons/io5';
 
-const ChatHeader = ({ socket }) => {
+const ChatHeader = ({
+  socket, onStartCall, isCallReady,
+  isSearchOpen, searchQuery, matchCount, currentMatchIdx,
+  onSearchOpen, onSearchClose, onSearchChange, onSearchNavigate,
+}) => {
   const activeChatId = useSelector((state) => state.chats?.activeChat);
   const chats = useSelector((state) => state.chats?.list) || [];
   const currentUserId = useSelector((state) => state.auth?.user?.id);
   const chat = chats.find((c) => c.id === activeChatId);
 
-  const [isOnline, setIsOnline] = useState(false);
+  // ✅ Глобальный словарь статусов из Redux
+  const userStatuses = useSelector((state) => state.chats?.userStatuses || {});
+
   const [isTyping, setIsTyping] = useState(false);
   const [participants, setParticipants] = useState([]);
 
-  // ✅ Обновляем isOnline, когда меняется чат или его is_online из Redux
-  useEffect(() => {
-    if (chat?.type === 'private') {
-      setIsOnline(chat.is_online || false);
-    } else {
-      setIsOnline(false);
-    }
-  }, [chat?.id, chat?.is_online]);
+  // ✅ Находим ID собеседника
+  const otherParticipant = chat?.participants?.find((participant) => {
+    if (participant == null) return false;
+    return typeof participant === 'object' ? participant.id !== currentUserId : participant !== currentUserId;
+  });
+  const otherParticipantId = typeof otherParticipant === 'object' ? otherParticipant.id : otherParticipant;
+  const interlocutorId = chat?.type === 'private'
+    ? (chat.userId || otherParticipantId)
+    : null;
+  const interlocutorKey = interlocutorId != null ? String(interlocutorId) : null;
 
-  // ✅ Загрузка участников для группового чата
+  // ✅ Статус из Redux
+  const isOnline = interlocutorKey ? userStatuses[interlocutorKey] : false;
+
+  // Загрузка участников группы
   useEffect(() => {
     if (!chat || chat.type !== 'group') {
       setParticipants([]);
       return;
     }
-
     const token = localStorage.getItem('accessToken');
-    axios.get(`http://localhost:5000/api/chats/${chat.id}/participants`, {
+    axios.get(`${API_URL}/chats/${chat.id}/participants`, {
       headers: { Authorization: `Bearer ${token}` }
-    })
-    .then(res => setParticipants(res.data))
-    .catch(err => console.error('Error fetching participants:', err));
-  }, [chat]);
+    }).then(res => setParticipants(res.data))
+      .catch(err => console.error('Error fetching participants:', err));
+  }, [chat, chat?.id, chat?.type]);
 
-  // Слушатели сокетов (онлайн / печатает)
+  // Слушатели сокетов
   useEffect(() => {
     if (!socket || !chat) return;
 
-    // ✅ Для личных чатов: получаем ID собеседника
-    const otherUserId = chat.type === 'private' ? chat.user_id : null;
-
-    const handleStatus = ({ userId, isOnline: status }) => {
-      // ✅ Обновляем статус ТОЛЬКО если это собеседник в личном чате
-      if (chat.type === 'private' && userId === otherUserId) {
-        console.log(`🟢 Статус собеседника ${userId}: ${status ? 'ОНЛАЙН' : 'ОФФЛАЙН'}`);
-        setIsOnline(status);
-      }
-    };
-
     const handleTyping = ({ userId, isTyping: typing }) => {
-      // ✅ "Печатает" тоже только от собеседника
-      if (chat.type === 'private' && userId === otherUserId) {
-        console.log(`✍️ Пользователь ${userId} ${typing ? 'печатает' : 'перестал'}`);
+      if (chat.type === 'private' && userId === interlocutorId) {
         setIsTyping(typing);
       }
     };
 
-    // ✅ Слушатель: новый участник в группе
-    const handleParticipantAdded = ({ chatId, userId }) => {
+    const handleParticipantAdded = ({ chatId }) => {
       if (chatId === activeChatId && chat?.type === 'group') {
         const token = localStorage.getItem('accessToken');
-        axios.get(`http://localhost:5000/api/chats/${chatId}/participants`, {
+        axios.get(`${API_URL}/chats/${chatId}/participants`, {
           headers: { Authorization: `Bearer ${token}` }
         }).then(res => setParticipants(res.data));
       }
     };
 
-    socket.on('user_status_changed', handleStatus);
     socket.on('user_typing', handleTyping);
     socket.on('participant_added', handleParticipantAdded);
 
     return () => {
-      socket.off('user_status_changed', handleStatus);
       socket.off('user_typing', handleTyping);
       socket.off('participant_added', handleParticipantAdded);
     };
-  }, [socket, chat, activeChatId]);
+  }, [socket, chat, activeChatId, interlocutorId]);
 
   if (!chat) return null;
 
-  // ✅ Формируем статус-текст
   const getStatusText = () => {
     if (chat.type === 'group') return `${participants.length} участников`;
     if (isTyping) return 'печатает...';
     return isOnline ? 'онлайн' : 'был(а) недавно';
   };
+
+  // ✅ Обработчики начала звонка (разделены на видео/аудио)
+  const handleStartVideoCall = () => {
+    if (chat.type === 'private' && interlocutorId && onStartCall) {
+      onStartCall(interlocutorId, { video: true });
+    }
+  };
+
+  const handleStartAudioCall = () => {
+    if (chat.type === 'private' && interlocutorId && onStartCall) {
+      onStartCall(interlocutorId, { video: false });
+    }
+  };
+
+  if (isSearchOpen) {
+    const hasQuery = searchQuery.trim().length > 0;
+    return (
+      <div className="h-[60px] bg-[#373737] border-b border-[#222] flex items-center px-4 gap-3">
+        <button onClick={onSearchClose} className="text-gray-400 hover:text-white transition flex-shrink-0">
+          <IoArrowBack size={20} />
+        </button>
+        <input
+          autoFocus
+          type="text"
+          value={searchQuery}
+          onChange={e => onSearchChange(e.target.value)}
+          placeholder="Поиск по сообщениям..."
+          className="flex-1 bg-[#484849] text-white text-sm rounded-lg py-1.5 px-3 placeholder-gray-500 focus:outline-none focus:ring-1 focus:ring-gray-500"
+        />
+        {hasQuery && (
+          <span className="text-xs text-gray-400 flex-shrink-0 min-w-[52px] text-center">
+            {matchCount > 0 ? `${currentMatchIdx + 1} / ${matchCount}` : 'Нет'}
+          </span>
+        )}
+        <button
+          onClick={() => onSearchNavigate(-1)}
+          disabled={matchCount === 0}
+          className="text-gray-400 hover:text-white transition disabled:opacity-30 flex-shrink-0"
+          title="Предыдущее"
+        >
+          <IoChevronUp size={20} />
+        </button>
+        <button
+          onClick={() => onSearchNavigate(1)}
+          disabled={matchCount === 0}
+          className="text-gray-400 hover:text-white transition disabled:opacity-30 flex-shrink-0"
+          title="Следующее"
+        >
+          <IoChevronDown size={20} />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="h-[60px] bg-[#373737] border-b border-[#222] flex items-center justify-between px-6">
@@ -106,7 +152,6 @@ const ChatHeader = ({ socket }) => {
                chat.name?.[0]?.toUpperCase() || 'U'
              )}
           </div>
-          {/* 🟢 Точка онлайн (только для личных чатов) */}
           {chat.type === 'private' && isOnline && !isTyping && (
             <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-[#373737]"></div>
           )}
@@ -115,9 +160,7 @@ const ChatHeader = ({ socket }) => {
           <h3 className="text-white font-bold text-base">
             {chat.name}
             {chat.type === 'group' && (
-              <span className="ml-2 text-gray-400 font-normal text-xs">
-                ({participants.length})
-              </span>
+              <span className="ml-2 text-gray-400 font-normal text-xs">({participants.length})</span>
             )}
           </h3>
           <p className={`text-xs transition-colors ${
@@ -127,27 +170,30 @@ const ChatHeader = ({ socket }) => {
           </p>
         </div>
       </div>
-      
+
       <div className="flex items-center gap-4 text-gray-400">
-        <button className="hover:text-white transition">
+        <button onClick={onSearchOpen} className="hover:text-white transition" title="Поиск">
           <SearchIcon className="w-5 h-5" />
         </button>
-        <button className="hover:text-white transition">
-          <CallEndIcon className="w-5 h-5" />
-        </button>
+        {chat.type === 'private' && isOnline && (
+          <button className="transition hover:text-green-400" onClick={handleStartVideoCall} title="Начать видеозвонок">
+            <IoVideocam size={20} />
+          </button>
+        )}
+        {chat.type === 'private' && isOnline && (
+          <button className="transition hover:text-white" onClick={handleStartAudioCall} title="Начать аудиозвонок">
+            <CallEndIcon className="w-5 h-5" />
+          </button>
+        )}
         {chat.type === 'group' && (
           <button className="hover:text-white transition relative" title="Участники">
             <IoPeople size={20} />
             {participants.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-600 text-[9px] text-white rounded-full flex items-center justify-center">
-                {participants.length}
-              </span>
+              <span className="absolute -top-1 -right-1 w-4 h-4 bg-blue-600 text-[9px] text-white rounded-full flex items-center justify-center">{participants.length}</span>
             )}
           </button>
         )}
-        <button className="hover:text-white transition">
-          <MoreVertIcon className="w-5 h-5" />
-        </button>
+        <button className="hover:text-white transition"><MoreVertIcon className="w-5 h-5" /></button>
       </div>
     </div>
   );

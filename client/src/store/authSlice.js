@@ -1,7 +1,10 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
+import { API_URL } from '../services/endpointConfig';
 
-const API_URL = 'http://localhost:5000/api';
+// Приводим поля пользователя к единому виду (avatar_url → avatar)
+const normalizeUser = (u) => u ? { ...u, avatar: u.avatar_url || u.avatar || null } : null;
+
 
 // === ASYNC THUNKS ===
 
@@ -111,7 +114,7 @@ const authSlice = createSlice({
       .addCase(login.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(login.fulfilled, (state, action) => {
         state.loading = false;
-        state.user = action.payload.user;
+        state.user = normalizeUser(action.payload.user);
         state.isAuthenticated = true;
       })
       .addCase(login.rejected, (state, action) => {
@@ -122,7 +125,7 @@ const authSlice = createSlice({
       .addCase(register.pending, (state) => { state.loading = true; state.error = null; })
       .addCase(register.fulfilled, (state, action) => {
         state.loading = false;
-        state.user = action.payload.user;
+        state.user = normalizeUser(action.payload.user);
         state.isAuthenticated = true;
       })
       .addCase(register.rejected, (state, action) => {
@@ -137,7 +140,7 @@ const authSlice = createSlice({
       // Update Profile
       .addCase(updateProfile.fulfilled, (state, action) => {
         if (state.user) {
-          state.user = { ...state.user, ...action.payload };
+          state.user = { ...state.user, ...normalizeUser(action.payload) };
         }
       });
   },

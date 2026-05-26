@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useDispatch } from 'react-redux';
+import { API_URL } from '../services/endpointConfig';
 import { setActiveChat, fetchChats } from '../store/chatSlice';
 import { IoClose, IoSearch, IoCheckmark } from 'react-icons/io5';
 
@@ -16,7 +17,7 @@ const CreateGroupModal = ({ onClose }) => {
     if (query.length < 2) return setUsers([]);
     setLoading(true);
     const token = localStorage.getItem('accessToken');
-    axios.get(`http://localhost:5000/api/users/search?q=${query}`, {
+    axios.get(`${API_URL}/users/search?q=${query}`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then(res => { setUsers(res.data); setLoading(false); })
       .catch(() => { setUsers([]); setLoading(false); });
@@ -32,7 +33,7 @@ const CreateGroupModal = ({ onClose }) => {
     if (!groupName.trim() || selected.length === 0) return;
     const token = localStorage.getItem('accessToken');
     try {
-      const res = await axios.post('http://localhost:5000/api/chats/group', {
+      const res = await axios.post(`${API_URL}/chats/group`, {
         name: groupName,
         participantIds: selected.map(u => u.id)
       }, { headers: { Authorization: `Bearer ${token}` } });

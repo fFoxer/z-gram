@@ -7,7 +7,10 @@ exports.register = async (req, res) => {
   try {
     const { username, phone, password, country_code, full_name } = req.body;
     const existingUser = await pool.query('SELECT id FROM users WHERE phone = $1', [phone]);
-    if (existingUser.rows.length > 0) return res.status(400).json({ message: 'User already exists' });
+    if (existingUser.rows.length > 0) return res.status(400).json({ message: 'Пользователь с таким телефоном уже существует' });
+
+    const existingUsername = await pool.query('SELECT id FROM users WHERE username = $1', [username]);
+    if (existingUsername.rows.length > 0) return res.status(400).json({ message: 'Имя пользователя уже занято' });
 
     const salt = await bcrypt.genSalt(10);
     const passwordHash = await bcrypt.hash(password, salt);

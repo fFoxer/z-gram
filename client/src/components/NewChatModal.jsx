@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useDispatch } from 'react-redux';
+import { API_URL } from '../services/endpointConfig';
 import { setActiveChat } from '../store/chatSlice';
 import { fetchChats } from '../store/chatSlice';
 import { IoClose, IoSearch } from 'react-icons/io5';
@@ -20,7 +21,7 @@ const NewChatModal = ({ onClose }) => {
     setLoading(true);
     const token = localStorage.getItem('accessToken');
     
-    axios.get(`http://localhost:5000/api/users/search?q=${query}`, {
+    axios.get(`${API_URL}/users/search?q=${query}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     .then(res => {
@@ -37,7 +38,7 @@ const NewChatModal = ({ onClose }) => {
   const startChat = async (userId) => {
     try {
       const token = localStorage.getItem('accessToken');
-      const res = await axios.post('http://localhost:5000/api/chats', { userId }, {
+      const res = await axios.post(`${API_URL}/chats`, { userId }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       
