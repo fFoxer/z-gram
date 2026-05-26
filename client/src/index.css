@@ -10,9 +10,12 @@
 
 body {
   font-family: 'Inter', sans-serif;
-  background-color: #181818; /* Очень темный фон, как в макете */
+  background-color: #181818;
   color: #ffffff;
   overflow: hidden;
+  /* Фоллбэк для браузеров без поддержки dvh */
+  height: 100vh;
+  height: 100dvh;
 }
 
 /* Скроллбар, чтобы не портил вид */

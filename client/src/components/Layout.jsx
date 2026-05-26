@@ -16,7 +16,7 @@ const Layout = ({ children, onStartCall }) => {
   }, [chatsLoaded, dispatch]);
 
   return (
-    <div className="flex flex-col h-screen bg-[#181818] text-white overflow-hidden">
+    <div className="flex flex-col h-[100dvh] bg-[#181818] text-white overflow-hidden">
 
       {/* TopBar: на мобильном скрываем когда открыт чат */}
       <div className={activeChat ? 'hidden md:block' : 'block'}>
