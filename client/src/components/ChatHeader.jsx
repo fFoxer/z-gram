@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { setActiveChat } from '../store/chatSlice';
+import { clearActiveChat } from '../store/chatSlice';
 import axios from 'axios';
 import SearchIcon from '../icons/SearchIcon';
 import { API_URL } from '../services/endpointConfig';
@@ -80,7 +80,13 @@ const ChatHeader = ({
     };
   }, [socket, chat, activeChatId, interlocutorId]);
 
-  if (!chat) return null;
+  if (!chat) return (
+    <div className="h-[60px] bg-[#373737] border-b border-[#222] flex items-center px-4">
+      <button onClick={() => dispatch(clearActiveChat())} className="md:hidden text-gray-400 hover:text-white transition p-1">
+        <IoArrowBack size={22} />
+      </button>
+    </div>
+  );
 
   const getStatusText = () => {
     if (chat.type === 'group') return `${participants.length} участников`;
@@ -145,7 +151,7 @@ const ChatHeader = ({
     <div className="h-[60px] bg-[#373737] border-b border-[#222] flex items-center justify-between px-4 md:px-6">
       <div className="flex items-center gap-3">
         <button
-          onClick={() => dispatch(setActiveChat(null))}
+          onClick={() => dispatch(clearActiveChat())}
           className="md:hidden text-gray-400 hover:text-white transition p-1 flex-shrink-0"
         >
           <IoArrowBack size={22} />

@@ -1,12 +1,19 @@
-import React, { useState } from 'react';
-import { useSelector } from 'react-redux';
+import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
+import { fetchChats } from '../store/chatSlice';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import SidebarMenu from './SidebarMenu';
 
 const Layout = ({ children, onStartCall }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const dispatch = useDispatch();
   const activeChat = useSelector((state) => state.chats.activeChat);
+  const chatsLoaded = useSelector((state) => state.chats.list.length > 0);
+
+  useEffect(() => {
+    if (!chatsLoaded) dispatch(fetchChats());
+  }, [chatsLoaded, dispatch]);
 
   return (
     <div className="flex flex-col h-screen bg-[#181818] text-white overflow-hidden">
