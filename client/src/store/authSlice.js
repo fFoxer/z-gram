@@ -1,9 +1,9 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { API_URL } from '../services/endpointConfig';
+import { API_URL, resolveUrl } from '../services/endpointConfig';
 
 // Приводим поля пользователя к единому виду (avatar_url → avatar)
-const normalizeUser = (u) => u ? { ...u, avatar: u.avatar_url || u.avatar || null } : null;
+const normalizeUser = (u) => u ? { ...u, avatar: resolveUrl(u.avatar_url || u.avatar) } : null;
 
 
 // === ASYNC THUNKS ===

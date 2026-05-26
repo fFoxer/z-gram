@@ -1,6 +1,6 @@
 import { createSlice, createAsyncThunk } from '@reduxjs/toolkit';
 import axios from 'axios';
-import { API_URL } from '../services/endpointConfig';
+import { API_URL, resolveUrl } from '../services/endpointConfig';
 
 const loadFromStorage = (key, fallback) => {
   try {
@@ -95,7 +95,7 @@ const chatSlice = createSlice({
       const { userId, avatar, name } = action.payload;
       state.list.forEach(chat => {
         if (chat.type === 'private' && String(chat.userId) === String(userId)) {
-          if (avatar !== undefined) chat.avatar = avatar;
+          if (avatar !== undefined) chat.avatar = resolveUrl(avatar);
           if (name)                 chat.name   = name;
         }
       });
@@ -121,7 +121,10 @@ const chatSlice = createSlice({
       .addCase(fetchChats.pending, (state) => { state.loading = true; })
       .addCase(fetchChats.fulfilled, (state, action) => {
         state.loading = false;
-        state.list = action.payload;
+        state.list = action.payload.map(chat => ({
+          ...chat,
+          avatar: resolveUrl(chat.avatar_url || chat.avatar),
+        }));
       })
       .addCase(fetchChats.rejected, (state, action) => {
         state.loading = false;

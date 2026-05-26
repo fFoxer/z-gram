@@ -16,4 +16,10 @@ const API_URL = `${getHostUrl()}/api`;
 const SOCKET_URL = process.env.REACT_APP_SOCKET_URL || getHostUrl();
 const UPLOAD_URL = `${API_URL}/upload`;
 
-export { API_URL, SOCKET_URL, UPLOAD_URL };
+const resolveUrl = (url) => {
+  if (!url) return null;
+  if (url.startsWith('http')) return url;
+  return `${getHostUrl()}${url}`;
+};
+
+export { API_URL, SOCKET_URL, UPLOAD_URL, resolveUrl };

@@ -377,9 +377,7 @@ socket.on('end-call', async ({ to }) => {
 app.post('/api/upload', upload.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ message: 'No file uploaded' });
 
-  const host = req.get('host');
-  const protocol = req.protocol;
-  res.json({ url: `${protocol}://${host}/uploads/${req.file.filename}` });
+  res.json({ url: `/uploads/${req.file.filename}` });
 });
 
 const PORT = process.env.PORT || 5000;

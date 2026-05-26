@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import MessageMenu from './MessageMenu';
 import VoicePlayer from './VoicePlayer';
+import { resolveUrl } from '../services/endpointConfig';
 
 // ✅ Надёжная функция: превращает ВСЕ эмодзи в картинки (Twemoji с правильными CORS)
 const renderRichContent = (text) => {
@@ -110,18 +111,19 @@ const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGro
   };
   const handleClick = () => { if (menuPos) setMenuPos(null); };
 
+  const fileUrl = resolveUrl(message.file_url);
   const isVoice = message.type === 'voice';
-  const isImage = message.type === 'image' || (message.file_url && /\.(jpg|jpeg|png|gif|webp)$/i.test(message.file_url));
-  const isVideo = message.type === 'video' || (message.file_url && /\.(mp4|mov|avi|ogg|mkv)$/i.test(message.file_url));
-  const isAudio = !isVoice && (message.type === 'audio' || (message.file_url && /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(message.file_url)));
+  const isImage = message.type === 'image' || (fileUrl && /\.(jpg|jpeg|png|gif|webp)$/i.test(fileUrl));
+  const isVideo = message.type === 'video' || (fileUrl && /\.(mp4|mov|avi|ogg|mkv)$/i.test(fileUrl));
+  const isAudio = !isVoice && (message.type === 'audio' || (fileUrl && /\.(mp3|wav|ogg|flac|aac|m4a)$/i.test(fileUrl)));
   const isFile = message.type === 'file' && !isImage && !isVideo && !isAudio && !isVoice;
-  const downloadedName = message.content || message.file_url?.split('/').pop();
+  const downloadedName = message.content || fileUrl?.split('/').pop();
 
   const renderDownloadLink = () => {
-    if (!message.file_url || isVoice) return null;
+    if (!fileUrl || isVoice) return null;
     return (
       <a
-        href={message.file_url}
+        href={fileUrl}
         download={downloadedName}
         target="_blank"
         rel="noopener noreferrer"
@@ -145,13 +147,13 @@ const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGro
 
           {isImage && (
             <>
-              <div className="mb-2 rounded-lg overflow-hidden max-w-[250px]"><img src={message.file_url} alt="" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(message.file_url, '_blank')} /></div>
+              <div className="mb-2 rounded-lg overflow-hidden max-w-[250px]"><img src={fileUrl} alt="" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(fileUrl, '_blank')} /></div>
               {renderDownloadLink()}
             </>
           )}
           {isVideo && (
             <>
-              <div className="mb-2 rounded-lg overflow-hidden max-w-[280px] bg-[#1a1a1a] border border-[#333]"><video src={message.file_url} controls playsInline preload="metadata" className="w-full h-auto max-h-[300px] object-contain" /></div>
+              <div className="mb-2 rounded-lg overflow-hidden max-w-[280px] bg-[#1a1a1a] border border-[#333]"><video src={fileUrl} controls playsInline preload="metadata" className="w-full h-auto max-h-[300px] object-contain" /></div>
               {renderDownloadLink()}
             </>
           )}
@@ -166,7 +168,7 @@ const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGro
           )}
           {isFile && (
             <>
-              <a href={message.file_url} download={downloadedName} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-black/20 p-3 rounded-lg mb-2 hover:bg-black/30 transition min-w-[180px]"><span className="text-2xl">📄</span><span className="text-sm underline break-all">{message.content}</span></a>
+              <a href={fileUrl} download={downloadedName} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 bg-black/20 p-3 rounded-lg mb-2 hover:bg-black/30 transition min-w-[180px]"><span className="text-2xl">📄</span><span className="text-sm underline break-all">{message.content}</span></a>
             </>
           )}
 
