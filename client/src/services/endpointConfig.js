@@ -18,6 +18,13 @@ const UPLOAD_URL = `${API_URL}/upload`;
 
 const resolveUrl = (url) => {
   if (!url) return null;
+  // Заменяем localhost/127.0.0.1 на актуальный хост (для LAN-пользователей)
+  if (url.match(/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?/)) {
+    try {
+      const path = new URL(url).pathname;
+      return `${getHostUrl()}${path}`;
+    } catch { return url; }
+  }
   if (url.startsWith('http')) return url;
   return `${getHostUrl()}${url}`;
 };
