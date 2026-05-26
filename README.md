@@ -6,7 +6,7 @@
 
 **Требования:** [Docker](https://docs.docker.com/get-docker/) + [Docker Compose](https://docs.docker.com/compose/install/)
 
-`ash
+bash
 git clone https://github.com/fFoxer/z-gram.git
 cd z-gram
 docker-compose up --build
