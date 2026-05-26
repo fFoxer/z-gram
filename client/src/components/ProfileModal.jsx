@@ -131,7 +131,7 @@ const ProfileModal = ({ onBack, onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center">
-      <div className="w-[500px] bg-[#2a2a2a] rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
+      <div className="w-[calc(100vw-2rem)] max-w-[500px] bg-[#2a2a2a] rounded-2xl shadow-2xl border border-white/10 overflow-hidden">
 
         {/* Шапка */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">

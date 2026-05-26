@@ -52,7 +52,7 @@ const NewChatModal = ({ onClose }) => {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50">
-      <div className="bg-[#373737] w-[400px] rounded-xl p-6 shadow-2xl">
+      <div className="bg-[#373737] w-[calc(100vw-2rem)] max-w-[400px] rounded-xl p-6 shadow-2xl">
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-bold text-white">Новый чат</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-white">

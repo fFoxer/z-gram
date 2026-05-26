@@ -50,7 +50,7 @@ const ImageCropModal = ({ imageSrc, onConfirm, onCancel }) => {
 
   return (
     <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center">
-      <div className="bg-[#2a2a2a] rounded-2xl overflow-hidden border border-white/10 shadow-2xl w-[420px] flex flex-col">
+      <div className="bg-[#2a2a2a] rounded-2xl overflow-hidden border border-white/10 shadow-2xl w-[calc(100vw-2rem)] max-w-[420px] flex flex-col">
 
         {/* Шапка */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10">

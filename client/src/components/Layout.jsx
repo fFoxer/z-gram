@@ -1,25 +1,32 @@
 import React, { useState } from 'react';
+import { useSelector } from 'react-redux';
 import Sidebar from './Sidebar';
 import TopBar from './TopBar';
 import SidebarMenu from './SidebarMenu';
 
 const Layout = ({ children, onStartCall }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const activeChat = useSelector((state) => state.chats.activeChat);
 
   return (
     <div className="flex flex-col h-screen bg-[#181818] text-white overflow-hidden">
 
-      <TopBar onMenuClick={() => setIsMenuOpen(true)} />
+      {/* TopBar: на мобильном скрываем когда открыт чат */}
+      <div className={activeChat ? 'hidden md:block' : 'block'}>
+        <TopBar onMenuClick={() => setIsMenuOpen(true)} />
+      </div>
 
       <SidebarMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
 
-      <div className="flex flex-1 overflow-hidden px-2 pb-2 gap-2">
+      <div className="flex flex-1 overflow-hidden md:px-2 md:pb-2 md:gap-2">
 
-        <div className="h-full rounded-xl overflow-hidden">
+        {/* Сайдбар: на мобильном скрываем когда открыт чат */}
+        <div className={`h-full md:rounded-xl overflow-hidden flex-shrink-0 ${activeChat ? 'hidden md:block' : 'block w-full md:w-auto'}`}>
           <Sidebar />
         </div>
 
-        <div className="flex-1 flex flex-col h-full relative overflow-hidden rounded-xl bg-[#181818] border border-[#111]">
+        {/* Окно чата: на мобильном скрываем когда нет активного чата */}
+        <div className={`flex-1 flex flex-col h-full relative overflow-hidden md:rounded-xl bg-[#181818] md:border md:border-[#111] ${activeChat ? 'flex' : 'hidden md:flex'}`}>
           {React.Children.map(children, child =>
             React.isValidElement(child)
               ? React.cloneElement(child, { onStartCall: child.props?.onStartCall ?? onStartCall })

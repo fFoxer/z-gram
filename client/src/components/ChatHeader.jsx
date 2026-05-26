@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
+import { setActiveChat } from '../store/chatSlice';
 import axios from 'axios';
 import SearchIcon from '../icons/SearchIcon';
 import { API_URL } from '../services/endpointConfig';
@@ -12,6 +13,7 @@ const ChatHeader = ({
   isSearchOpen, searchQuery, matchCount, currentMatchIdx,
   onSearchOpen, onSearchClose, onSearchChange, onSearchNavigate,
 }) => {
+  const dispatch = useDispatch();
   const activeChatId = useSelector((state) => state.chats?.activeChat);
   const chats = useSelector((state) => state.chats?.list) || [];
   const currentUserId = useSelector((state) => state.auth?.user?.id);
@@ -140,8 +142,14 @@ const ChatHeader = ({
   }
 
   return (
-    <div className="h-[60px] bg-[#373737] border-b border-[#222] flex items-center justify-between px-6">
-      <div className="flex items-center gap-4">
+    <div className="h-[60px] bg-[#373737] border-b border-[#222] flex items-center justify-between px-4 md:px-6">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={() => dispatch(setActiveChat(null))}
+          className="md:hidden text-gray-400 hover:text-white transition p-1 flex-shrink-0"
+        >
+          <IoArrowBack size={22} />
+        </button>
         <div className="relative">
           <div className="w-10 h-10 rounded-full bg-[#484849] flex items-center justify-center text-white font-bold overflow-hidden">
              {chat.avatar ? (
