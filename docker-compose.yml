@@ -32,6 +32,7 @@ services:
       - zgram_network
 
   server:
+    profiles: [full]
     build: ./server
     container_name: zgram_server
     ports:
@@ -63,6 +64,7 @@ services:
     restart: unless-stopped
 
   client:
+    profiles: [full]
     build: ./client
     container_name: zgram_client
     ports:
