@@ -52,21 +52,30 @@ exports.updateMe = async (req, res) => {
 
     const updatedUser = result.rows[0];
 
-    // Оповещаем собеседников об изменении имени/аватара через сокет
+    // Оповещаем всех онлайн-контактов напрямую (не через chat rooms)
     const io = req.app.get('io');
-    if (io && (full_name || username || avatar_url)) {
-      const chats = await pool.query(
-        'SELECT chat_id FROM chat_participants WHERE user_id = $1',
+    const onlineUsers = req.app.get('onlineUsers');
+    if (io && onlineUsers && (full_name || username || avatar_url)) {
+      const contacts = await pool.query(
+        `SELECT DISTINCT cp2.user_id
+         FROM chat_participants cp1
+         JOIN chat_participants cp2 ON cp1.chat_id = cp2.chat_id
+         WHERE cp1.user_id = $1 AND cp2.user_id != $1`,
         [req.user.id]
       );
-      chats.rows.forEach(({ chat_id }) => {
-        io.to(`chat_${chat_id}`).emit('user_profile_updated', {
-          userId: req.user.id,
-          full_name: updatedUser.full_name,
-          username: updatedUser.username,
-          avatar_url: updatedUser.avatar_url,
-        });
+      const payload = {
+        userId: req.user.id,
+        full_name: updatedUser.full_name,
+        username: updatedUser.username,
+        avatar_url: updatedUser.avatar_url,
+      };
+      contacts.rows.forEach(({ user_id }) => {
+        const socketId = onlineUsers.get(String(user_id));
+        if (socketId) io.to(socketId).emit('user_profile_updated', payload);
       });
+      // Также сам себе (обновление в своих других вкладках)
+      const ownSocketId = onlineUsers.get(String(req.user.id));
+      if (ownSocketId) io.to(ownSocketId).emit('user_profile_updated', payload);
     }
 
     res.json(updatedUser);

@@ -105,11 +105,10 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Передаём io в маршруты через app
-app.set('io', io);
-
-// ✅ Карта онлайн-пользователей: userId -> socketId
+// Передаём io и onlineUsers в маршруты через app
 const onlineUsers = new Map();
+app.set('io', io);
+app.set('onlineUsers', onlineUsers);
 
 // ✅ Функция: получить всех пользователей, которые должны видеть статус userId
 async function getUsersWhoShouldSeeStatus(userId) {
