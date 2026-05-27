@@ -94,7 +94,7 @@ exports.searchUsers = async (req, res) => {
     const result = await pool.query(
       `SELECT id, username, full_name, phone, avatar_url, is_online
        FROM users
-       WHERE (username ILIKE $1 OR full_name ILIKE $1 OR phone ILIKE $1)
+       WHERE (username ILIKE $1 OR phone ILIKE $1)
          AND id != $2
        LIMIT 10`,
       [`%${q}%`, req.user.id]
