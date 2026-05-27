@@ -159,12 +159,12 @@ const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGro
           )}
           {isAudio && (
             <>
-              <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration} /></div>
+              <div className="my-1"><VoicePlayer url={fileUrl} durationString={message.duration} /></div>
               {renderDownloadLink()}
             </>
           )}
           {isVoice && (
-            <div className="my-1"><VoicePlayer url={message.file_url} durationString={message.duration || '0:00'} /></div>
+            <div className="my-1"><VoicePlayer url={fileUrl} durationString={message.duration || '0:00'} /></div>
           )}
           {isFile && (
             <>
