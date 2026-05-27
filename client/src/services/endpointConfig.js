@@ -4,9 +4,11 @@ const getHostUrl = () => {
   }
 
   if (typeof window !== 'undefined') {
-    const protocol = window.location.protocol;
-    const hostname = window.location.hostname;
-    return `${protocol}//${hostname}:5000`;
+    const { protocol, hostname, port } = window.location;
+    // Dev: React на :3000, API на :5000
+    if (port === '3000') return `${protocol}//${hostname}:5000`;
+    // Prod / ngrok: клиент и API на одном сервере/домене
+    return `${protocol}//${hostname}${port ? ':' + port : ''}`;
   }
 
   return 'http://localhost:5000';
