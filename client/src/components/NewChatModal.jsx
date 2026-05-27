@@ -17,11 +17,13 @@ const NewChatModal = ({ onClose }) => {
   // Поиск пользователей (только для личного чата)
   useEffect(() => {
     if (mode !== 'private' || query.length < 2) return setUsers([]);
-    
+
     setLoading(true);
     const token = localStorage.getItem('accessToken');
-    
-    axios.get(`${API_URL}/users/search?q=${query}`, {
+    // Убираем @ если пользователь ввёл @username
+    const q = query.startsWith('@') ? query.slice(1) : query;
+
+    axios.get(`${API_URL}/users/search?q=${q}`, {
       headers: { Authorization: `Bearer ${token}` }
     })
     .then(res => {
@@ -87,7 +89,7 @@ const NewChatModal = ({ onClose }) => {
               <input 
                 value={query} 
                 onChange={e => setQuery(e.target.value)} 
-                placeholder="Поиск по имени или телефону..." 
+                placeholder="Поиск по @username или номеру..."
                 className="w-full bg-[#222] text-white p-3 pl-10 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
                 autoFocus
               />
@@ -108,7 +110,9 @@ const NewChatModal = ({ onClose }) => {
                   </div>
                   <div className="min-w-0">
                     <p className="text-white text-sm font-medium truncate">{u.full_name || u.username}</p>
-                    <p className="text-gray-400 text-xs truncate">{u.is_online ? 'онлайн' : u.phone}</p>
+                    <p className="text-gray-400 text-xs truncate">
+                      {u.username ? `@${u.username}` : u.phone}
+                    </p>
                   </div>
                 </button>
               ))}
