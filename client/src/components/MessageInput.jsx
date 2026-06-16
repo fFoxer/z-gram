@@ -110,9 +110,9 @@ const MessageInput = ({ socket, onFileUpload }) => {
   };
 
   const handleFileChange = (e) => {
-    const files = e.target.files;
-    if (files.length > 0 && onFileUpload) onFileUpload(files);
+    const files = Array.from(e.target.files);
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (files.length > 0 && onFileUpload) onFileUpload(files);
   };
 
   const handleVoiceSend = async (audioBlob, duration) => {
@@ -200,7 +200,7 @@ const MessageInput = ({ socket, onFileUpload }) => {
     <div className="h-[60px] bg-[#373737] border-t border-[#222] flex items-center px-4 gap-3 relative">
       {!isRecording ? (
         <>
-          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" />
+          <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" multiple />
           <button type="button" onClick={() => fileInputRef.current?.click()} className="text-gray-400 hover:text-white transition p-2">
             <AttachIcon className="w-6 h-6" />
           </button>

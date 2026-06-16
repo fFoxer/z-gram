@@ -14,10 +14,40 @@ const getLastMessageText = (message) => {
   return message.content || '';
 };
 
-export const useSocket = (chatId, currentUserId) => {
+const playNotificationSound = async () => {
+  try {
+    const volume = JSON.parse(localStorage.getItem('notif_volume') ?? '80');
+    if (volume === 0) return;
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') await ctx.resume();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.value = 880;
+    osc.type = 'sine';
+    gain.gain.value = (volume / 100) * 0.4;
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.35);
+    osc.stop(ctx.currentTime + 0.35);
+  } catch {}
+};
+
+const showBrowserNotification = (senderName, text) => {
+  if (Notification.permission !== 'granted') return;
+  try {
+    new Notification(senderName || 'Z-Gram', {
+      body: text,
+      icon: '/favicon.ico',
+    });
+  } catch {}
+};
+
+export const useSocket = (chatId, currentUserId, onNotification) => {
   const [socket, setSocket] = useState(null);
   const socketRef = useRef(null);
   const currentUserIdRef = useRef(currentUserId);
+  const onNotificationRef = useRef(onNotification);
   const dispatch = useDispatch();
   const chatListRef = useRef([]);
   const chatList = useSelector((state) => state.chats.list);
@@ -34,6 +64,10 @@ export const useSocket = (chatId, currentUserId) => {
   useEffect(() => {
     currentUserIdRef.current = currentUserId;
   }, [currentUserId]);
+
+  useEffect(() => {
+    onNotificationRef.current = onNotification;
+  }, [onNotification]);
 
   // 1. Инициализация сокета
   useEffect(() => {
@@ -85,6 +119,20 @@ export const useSocket = (chatId, currentUserId) => {
         dispatch(resetUnread(currentActive));
       } else {
         dispatch(incrementUnread(message.chatId));
+
+        const notifEnabled = JSON.parse(localStorage.getItem('notif_enabled') ?? 'false');
+        const mutedChats = JSON.parse(localStorage.getItem('muted_chats') ?? '[]');
+        const isMuted = mutedChats.includes(message.chatId);
+        if (notifEnabled && !isMuted) {
+          const chat = chatListRef.current.find(c => c.id === message.chatId);
+          const text = getLastMessageText(message);
+          console.log('🔔 Firing notification | chat:', chat?.name, '| text:', text);
+          playNotificationSound();
+          if (document.hidden) {
+            showBrowserNotification(chat?.name || 'Z-Gram', text);
+          }
+          onNotificationRef.current?.({ name: chat?.name || 'Z-Gram', text, avatar: chat?.avatar });
+        }
       }
     };
 
@@ -111,19 +159,12 @@ export const useSocket = (chatId, currentUserId) => {
     };
   }, [currentUserId, dispatch]);
 
-  // 2. Управление комнатами
+  // 2. Вступаем во все комнаты чатов чтобы получать сообщения из любого чата
   useEffect(() => {
     const socket = socketRef.current;
-    if (!socket || !chatId) return;
-
-    socket.emit('join_chat', chatId);
-    console.log(`👥 Joined chat_${chatId}`);
-
-    return () => {
-      socket.emit('leave_chat', chatId);
-      console.log(`👥 Left chat_${chatId}`);
-    };
-  }, [chatId]);
+    if (!socket || !chatList.length) return;
+    chatList.forEach(chat => socket.emit('join_chat', chat.id));
+  }, [chatList]);
 
   return socket;
 };

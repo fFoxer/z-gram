@@ -6,7 +6,7 @@ import { fetchChats, setActiveChat, togglePinChat, reorderPinned } from '../stor
 import ChatItem from './ChatItem';
 import NewChatModal from './NewChatModal';
 
-const Sidebar = () => {
+const Sidebar = ({ searchQuery = '' }) => {
   const dispatch = useDispatch();
   const { list, loading, pinnedChats } = useSelector((state) => state.chats);
   const activeChatId = useSelector((state) => state.chats.activeChat);
@@ -20,10 +20,13 @@ const Sidebar = () => {
     dispatch(fetchChats());
   }, [dispatch]);
 
+  const q = searchQuery.toLowerCase().trim();
+  const filtered = q ? list.filter(c => c.name?.toLowerCase().includes(q)) : list;
+
   const pinnedList = pinnedChats
-    .map(id => list.find(c => c.id === id))
+    .map(id => filtered.find(c => c.id === id))
     .filter(Boolean);
-  const unpinnedList = list.filter(c => !pinnedChats.includes(c.id));
+  const unpinnedList = filtered.filter(c => !pinnedChats.includes(c.id));
 
   const handleDragEnd = ({ active, over }) => {
     if (!over || active.id === over.id) return;

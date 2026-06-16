@@ -4,6 +4,7 @@ import { IoCall, IoMic, IoMicOff, IoVideocam, IoVideocamOff, IoClose } from 'rea
 const CallModal = ({
   isReceivingCall,
   isCallingOut,
+  incomingVideo,
   caller,
   callAccepted,
   myVideo,
@@ -17,6 +18,7 @@ const CallModal = ({
   toggleAudio,
   toggleVideo,
   stream,
+  remoteStream,
   remoteVideoActive,
   remoteAvatar,
   remoteName,
@@ -30,7 +32,16 @@ const CallModal = ({
     if (stream && myVideo?.current) {
       myVideo.current.srcObject = stream;
     }
-  }, [stream, myVideo, videoEnabled]);
+  }, [stream, myVideo, videoEnabled, isCallingOut, callAccepted]);
+
+  useEffect(() => {
+    if (remoteStream && userVideo?.current) {
+      userVideo.current.srcObject = remoteStream;
+    }
+    if (remoteStream && userAudio?.current) {
+      userAudio.current.srcObject = remoteStream;
+    }
+  }, [remoteStream, userVideo, userAudio, callAccepted]);
 
   useEffect(() => {
     if (callError) {
@@ -72,31 +83,31 @@ const CallModal = ({
 
         {/* Кнопки */}
         <div className="flex gap-4 items-center">
-          {/* Видеозвонок */}
-          <button
-            onClick={() => answerCall({ video: true })}
-            className="w-11 h-11 rounded-full bg-[#3a3a3a] hover:bg-[#4a4a4a] flex items-center justify-center transition text-white"
-            title="Принять с видео"
-          >
-            <IoVideocam size={20} />
-          </button>
+          {incomingVideo ? (
+            <button
+              onClick={() => answerCall({ video: true })}
+              className="w-11 h-11 rounded-full bg-green-600 hover:bg-green-500 flex items-center justify-center transition text-white"
+              title="Принять с видео"
+            >
+              <IoVideocam size={20} />
+            </button>
+          ) : (
+            <button
+              onClick={() => answerCall({ video: false })}
+              className="w-11 h-11 rounded-full bg-green-600 hover:bg-green-500 flex items-center justify-center transition text-white"
+              title="Принять"
+            >
+              <IoCall size={20} />
+            </button>
+          )}
 
           {/* Отклонить */}
           <button
             onClick={rejectCall}
-            className="w-11 h-11 rounded-full bg-[#3a3a3a] hover:bg-[#4a4a4a] flex items-center justify-center transition text-white"
+            className="w-11 h-11 rounded-full bg-red-600 hover:bg-red-500 flex items-center justify-center transition text-white"
             title="Отклонить"
           >
             <IoClose size={20} />
-          </button>
-
-          {/* Аудиозвонок */}
-          <button
-            onClick={() => answerCall({ video: false })}
-            className="w-11 h-11 rounded-full bg-[#3a3a3a] hover:bg-[#4a4a4a] flex items-center justify-center transition text-white"
-            title="Принять (аудио)"
-          >
-            <IoCall size={20} />
           </button>
         </div>
       </div>
@@ -158,20 +169,10 @@ const CallModal = ({
         )}
       </div>
 
-      {/* Моё видео (маленькое, поверх) — скрываем если камера выключена */}
-      {callAccepted && videoEnabled && (
+      {/* Моё видео (маленькое, поверх) — показываем и во время вызова, и в звонке */}
+      {(callAccepted || isCallingOut) && videoEnabled && (
         <div className="absolute bottom-24 right-8 w-32 h-48 bg-black rounded-xl overflow-hidden shadow-2xl border-2 border-gray-600">
-          {videoEnabled ? (
-            <video playsInline ref={myVideo} autoPlay muted className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full flex items-center justify-center bg-[#111]">
-              {myAvatar ? (
-                <img src={myAvatar} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-sm text-white">Камера выкл.</div>
-              )}
-            </div>
-          )}
+          <video playsInline ref={myVideo} autoPlay muted className="w-full h-full object-cover" />
         </div>
       )}
 

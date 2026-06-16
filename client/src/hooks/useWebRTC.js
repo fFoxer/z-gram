@@ -5,6 +5,7 @@ export const useWebRTC = (socket, currentUserId) => {
   const [callAccepted, setCallAccepted] = useState(false);
   const [callEnded, setCallEnded] = useState(false);
   const [stream, setStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
   const [streamReady, setStreamReady] = useState(false);
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
@@ -131,6 +132,7 @@ export const useWebRTC = (socket, currentUserId) => {
     }
 
     setRemoteVideoActive(false);
+    setRemoteStream(null);
     setCallAccepted(false);
     setIsCallingOut(false);
     setIsReceivingCall(false);
@@ -190,10 +192,9 @@ export const useWebRTC = (socket, currentUserId) => {
       });
     });
 
-    peer.on('stream', (remoteStream) => {
-      if (userVideo.current) userVideo.current.srcObject = remoteStream;
-      if (userAudio.current) userAudio.current.srcObject = remoteStream;
-      setRemoteVideoActive(remoteStream?.getVideoTracks?.().length > 0);
+    peer.on('stream', (incoming) => {
+      setRemoteStream(incoming);
+      setRemoteVideoActive(incoming?.getVideoTracks?.().length > 0);
     });
 
     const handleAnswerMade = (data) => {
@@ -281,10 +282,9 @@ export const useWebRTC = (socket, currentUserId) => {
       });
     });
 
-    peer.on('stream', (remoteStream) => {
-      if (userVideo.current) userVideo.current.srcObject = remoteStream;
-      if (userAudio.current) userAudio.current.srcObject = remoteStream;
-      setRemoteVideoActive(remoteStream?.getVideoTracks?.().length > 0);
+    peer.on('stream', (incoming) => {
+      setRemoteStream(incoming);
+      setRemoteVideoActive(incoming?.getVideoTracks?.().length > 0);
     });
 
     try {
@@ -348,6 +348,8 @@ export const useWebRTC = (socket, currentUserId) => {
     callAccepted,
     callEnded,
     stream,
+    remoteStream,
+    incomingVideo,
     isReceivingCall,
     receivingCall: isReceivingCall,
     isCallingOut,

@@ -28,7 +28,9 @@ const messageSlice = createSlice({
   },
   reducers: {
     addMessage: (state, action) => {
-      state.list.push(action.payload);
+      if (!state.list.some(m => m.id === action.payload.id)) {
+        state.list.push(action.payload);
+      }
     },
     clearMessages: (state) => {
       state.list = [];

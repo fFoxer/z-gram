@@ -105,6 +105,36 @@ exports.searchUsers = async (req, res) => {
   }
 };
 
+// Профиль другого пользователя
+exports.getUserProfile = async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, username, full_name, status, avatar_url, phone, is_online, last_seen
+       FROM users WHERE id = $1`,
+      [req.params.userId]
+    );
+    if (!result.rows.length) return res.status(404).json({ message: 'Не найден' });
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error('getUserProfile error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
+// Удалить аккаунт
+exports.deleteMe = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    // chats.created_by не имеет ON DELETE CASCADE — обнуляем перед удалением
+    await pool.query('UPDATE chats SET created_by = NULL WHERE created_by = $1', [userId]);
+    await pool.query('DELETE FROM users WHERE id = $1', [userId]);
+    res.json({ message: 'Account deleted' });
+  } catch (error) {
+    console.error('deleteMe error:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+};
+
 exports.logout = async (req, res) => {
   try {
     const { refreshToken } = req.body;

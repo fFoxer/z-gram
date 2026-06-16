@@ -114,7 +114,12 @@ const chatSlice = createSlice({
         const [chat] = state.list.splice(idx, 1);
         state.list.unshift(chat);
       }
-    }
+    },
+    removeChat: (state, action) => {
+      const chatId = action.payload;
+      state.list = state.list.filter(c => c.id !== chatId);
+      if (state.activeChat === chatId) state.activeChat = null;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -154,6 +159,7 @@ export const {
   updateChatMeta,
   togglePinChat,
   reorderPinned,
+  removeChat,
 } = chatSlice.actions;
 
 export default chatSlice.reducer;

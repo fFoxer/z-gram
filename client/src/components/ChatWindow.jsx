@@ -4,6 +4,7 @@ import { fetchMessages, clearMessages, updateMessage, deleteMessage } from '../s
 import ChatHeader from './ChatHeader';
 import MessageBubble from './MessageBubble';
 import MessageInput from './MessageInput';
+import FilePreviewModal from './FilePreviewModal';
 import axios from 'axios';
 import { API_URL } from '../services/endpointConfig';
 import { incrementUnread, resetUnread } from '../store/chatSlice';
@@ -104,47 +105,49 @@ const ChatWindow = ({ socket, onStartCall, isCallReady }) => {
     };
   }, [socket, activeChatId, dispatch]);
 
-  // ✅ Единая функция загрузки файлов
-  const handleFileUpload = async (files) => {
-  if (!files || files.length === 0 || !socket || !activeChatId) return;
+  const [pendingFiles, setPendingFiles] = useState(null);
 
-  const file = files[0];
-  if (file.size > 50 * 1024 * 1024) { // 50 МБ
-    alert('Файл слишком большой (макс 50МБ)');
-    return;
-  }
+  // Показываем модал выбора файлов
+  const handleFileUpload = (files) => {
+    if (!files || files.length === 0) return;
+    setPendingFiles(files);
+  };
 
-  try {
-    const formData = new FormData();
-    formData.append('file', file);
+  // Фактическая отправка после подтверждения в модале
+  const handleFileSend = async (files, caption) => {
+    setPendingFiles(null);
+    if (!socket || !activeChatId) return;
 
-    const res = await axios.post(`${API_URL}/upload`, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' }
-    });
+    for (const file of files) {
+      if (file.size > 300 * 1024 * 1024) {
+        alert(`Файл "${file.name}" слишком большой (макс 300МБ)`);
+        continue;
+      }
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await axios.post(`${API_URL}/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
 
-    const fileUrl = res.data.url;
-    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        let contentType = 'file';
+        if (file.type.startsWith('image/')) contentType = 'image';
+        else if (file.type.startsWith('video/')) contentType = 'video';
+        else if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|ogg|flac|aac|m4a)$/i)) contentType = 'audio';
 
-    // ✅ Определяем тип: image, video или file
-    let contentType = 'file';
-    if (file.type.startsWith('image/')) contentType = 'image';
-    else if (file.type.startsWith('video/')) contentType = 'video';
-    else if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|ogg|flac|aac|m4a)$/i)) {
-  contentType = 'audio'; // ✅ Теперь аудиофайлы помечаются как 'audio'
-}
-
-    socket.emit('send_message', {
-      chatId: activeChatId,
-      content: file.name,
-      sender_id: currentUserId,
-      time,
-      file_url: fileUrl,
-      type: contentType // ✅ Теперь будет 'video' для видеофайлов
-    });
-  } catch (error) {
-    console.error('Upload error:', error);
-  }
-};
+        socket.emit('send_message', {
+          chatId: activeChatId,
+          content: contentType === 'file' ? file.name : caption,
+          sender_id: currentUserId,
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          file_url: res.data.url,
+          type: contentType,
+        });
+      } catch (error) {
+        console.error('Upload error:', error);
+      }
+    }
+  };
 
   // ✅ Drag & Drop обработчики
   const [isDragging, setIsDragging] = useState(false);
@@ -287,6 +290,14 @@ const ChatWindow = ({ socket, onStartCall, isCallReady }) => {
       </div>
 
       <MessageInput socket={socket} onFileUpload={handleFileUpload} />
+
+      {pendingFiles && (
+        <FilePreviewModal
+          files={pendingFiles}
+          onSend={handleFileSend}
+          onClose={() => setPendingFiles(null)}
+        />
+      )}
     </div>
   );
 };

@@ -1,12 +1,28 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
-import { clearActiveChat } from '../store/chatSlice';
+import { clearActiveChat, removeChat } from '../store/chatSlice';
+import { clearMessages } from '../store/messageSlice';
 import axios from 'axios';
+import api from '../services/api';
 import SearchIcon from '../icons/SearchIcon';
 import { API_URL } from '../services/endpointConfig';
 import CallEndIcon from '../icons/CallEndIcon';
 import MoreVertIcon from '../icons/MoreVertIcon';
-import { IoPeople, IoVideocam, IoArrowBack, IoChevronUp, IoChevronDown } from 'react-icons/io5';
+import {
+  IoPeople, IoVideocam, IoArrowBack, IoChevronUp, IoChevronDown,
+  IoNotificationsOff, IoNotifications, IoPerson, IoTrash, IoClose,
+} from 'react-icons/io5';
+
+const MenuItem = ({ icon: Icon, onClick, danger, children }) => (
+  <button
+    onClick={onClick}
+    className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition text-left
+      ${danger ? 'text-red-400 hover:bg-red-600/20' : 'text-gray-300 hover:bg-white/10'}`}
+  >
+    <Icon size={17} className="flex-shrink-0" />
+    {children}
+  </button>
+);
 
 const ChatHeader = ({
   socket, onStartCall, isCallReady,
@@ -24,6 +40,66 @@ const ChatHeader = ({
 
   const [isTyping, setIsTyping] = useState(false);
   const [participants, setParticipants] = useState([]);
+  const [showMenu, setShowMenu] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(null); // 'clear' | 'delete'
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileData, setProfileData] = useState(null);
+  const menuRef = useRef(null);
+
+  const getMutedChats = () => {
+    try { return JSON.parse(localStorage.getItem('muted_chats') || '[]'); } catch { return []; }
+  };
+  const isMuted = activeChatId ? getMutedChats().includes(activeChatId) : false;
+
+  const handleMuteToggle = () => {
+    const muted = getMutedChats();
+    const updated = muted.includes(activeChatId)
+      ? muted.filter(id => id !== activeChatId)
+      : [...muted, activeChatId];
+    localStorage.setItem('muted_chats', JSON.stringify(updated));
+    setShowMenu(false);
+  };
+
+  const handleShowProfile = async () => {
+    setShowMenu(false);
+    if (!interlocutorId) return;
+    try {
+      const token = localStorage.getItem('accessToken');
+      const res = await axios.get(`${API_URL}/users/${interlocutorId}/profile`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setProfileData(res.data);
+    } catch {
+      setProfileData({ name: chat?.name, avatar: chat?.avatar });
+    }
+    setShowProfile(true);
+  };
+
+  const handleClearHistory = async () => {
+    try {
+      await api.delete(`/chats/${activeChatId}/messages`);
+      dispatch(clearMessages());
+    } catch {}
+    setShowConfirm(null);
+  };
+
+  const handleDeleteChat = async () => {
+    try {
+      await api.delete(`/chats/${activeChatId}`);
+      dispatch(removeChat(activeChatId));
+    } catch {}
+    setShowConfirm(null);
+  };
+
+  // Закрытие меню по клику вне
+  useEffect(() => {
+    if (!showMenu) return;
+    const handler = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showMenu]);
 
   // ✅ Находим ID собеседника
   const otherParticipant = chat?.participants?.find((participant) => {
@@ -148,6 +224,7 @@ const ChatHeader = ({
   }
 
   return (
+    <>
     <div className="h-[60px] bg-[#373737] border-b border-[#222] flex items-center justify-between px-4 md:px-6">
       <div className="flex items-center gap-3">
         <button
@@ -207,9 +284,91 @@ const ChatHeader = ({
             )}
           </button>
         )}
-        <button className="hover:text-white transition"><MoreVertIcon className="w-5 h-5" /></button>
+        {/* Кнопка "..." + дропдаун */}
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => setShowMenu(v => !v)}
+            className="hover:text-white transition"
+          >
+            <MoreVertIcon className="w-5 h-5" />
+          </button>
+
+          {showMenu && (
+            <div className="absolute right-0 top-8 w-56 bg-[#2a2a2a] border border-white/10 rounded-xl shadow-2xl z-50 overflow-hidden py-1">
+              <MenuItem icon={isMuted ? IoNotifications : IoNotificationsOff} onClick={handleMuteToggle}>
+                {isMuted ? 'Включить уведомления' : 'Выключить уведомления'}
+              </MenuItem>
+              {chat.type === 'private' && (
+                <MenuItem icon={IoPerson} onClick={handleShowProfile}>Показать профиль</MenuItem>
+              )}
+              <MenuItem icon={IoTrash} onClick={() => { setShowMenu(false); setShowConfirm('clear'); }}>
+                Очистить историю
+              </MenuItem>
+              <MenuItem icon={IoClose} danger onClick={() => { setShowMenu(false); setShowConfirm('delete'); }}>
+                Удалить чат
+              </MenuItem>
+            </div>
+          )}
+        </div>
       </div>
     </div>
+
+    {/* Диалог подтверждения */}
+    {showConfirm && (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60" onClick={() => setShowConfirm(null)} />
+        <div className="relative bg-[#2a2a2a] rounded-2xl border border-white/10 shadow-2xl p-6 w-full max-w-[320px] flex flex-col gap-4">
+          <p className="text-white font-semibold text-center">
+            {showConfirm === 'clear' ? 'Очистить историю сообщений?' : 'Удалить чат?'}
+          </p>
+          <p className="text-gray-400 text-sm text-center">
+            {showConfirm === 'clear'
+              ? 'Все сообщения будут удалены безвозвратно.'
+              : 'Чат будет удалён для вас.'}
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={() => setShowConfirm(null)}
+              className="flex-1 py-2 rounded-xl bg-[#3a3a3a] text-gray-300 hover:bg-[#444] transition text-sm"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={showConfirm === 'clear' ? handleClearHistory : handleDeleteChat}
+              className="flex-1 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white transition text-sm"
+            >
+              {showConfirm === 'clear' ? 'Очистить' : 'Удалить'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* Профиль собеседника */}
+    {showProfile && (
+      <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/60" onClick={() => setShowProfile(false)} />
+        <div className="relative bg-[#2a2a2a] rounded-2xl border border-white/10 shadow-2xl p-6 w-full max-w-[320px] flex flex-col items-center gap-3">
+          <button
+            onClick={() => setShowProfile(false)}
+            className="absolute top-3 right-3 text-gray-400 hover:text-white transition"
+          >
+            <IoClose size={20} />
+          </button>
+          <div className="w-20 h-20 rounded-full overflow-hidden bg-[#484849] flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+            {(profileData?.avatar || chat?.avatar)
+              ? <img src={profileData?.avatar || chat?.avatar} alt="" className="w-full h-full object-cover" />
+              : (profileData?.full_name || chat?.name || '?')[0].toUpperCase()
+            }
+          </div>
+          <p className="text-white font-bold text-lg">{profileData?.full_name || chat?.name}</p>
+          {profileData?.username && <p className="text-gray-400 text-sm">@{profileData.username}</p>}
+          {profileData?.phone && <p className="text-gray-400 text-sm">{profileData.phone}</p>}
+          {profileData?.status && <p className="text-gray-500 text-xs text-center">{profileData.status}</p>}
+        </div>
+      </div>
+    )}
+  </>
   );
 };
 

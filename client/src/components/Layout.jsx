@@ -7,6 +7,7 @@ import SidebarMenu from './SidebarMenu';
 
 const Layout = ({ children, onStartCall }) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
   const dispatch = useDispatch();
   const activeChat = useSelector((state) => state.chats.activeChat);
   const chatsLoaded = useSelector((state) => state.chats.list.length > 0);
@@ -20,7 +21,7 @@ const Layout = ({ children, onStartCall }) => {
 
       {/* TopBar: на мобильном скрываем когда открыт чат */}
       <div className={activeChat ? 'hidden md:block' : 'block'}>
-        <TopBar onMenuClick={() => setIsMenuOpen(true)} />
+        <TopBar onMenuClick={() => setIsMenuOpen(true)} searchQuery={searchQuery} onSearchChange={setSearchQuery} />
       </div>
 
       <SidebarMenu isOpen={isMenuOpen} onClose={() => setIsMenuOpen(false)} />
@@ -29,7 +30,7 @@ const Layout = ({ children, onStartCall }) => {
 
         {/* Сайдбар: на мобильном скрываем когда открыт чат */}
         <div className={`h-full md:rounded-xl overflow-hidden flex-shrink-0 ${activeChat ? 'hidden md:block' : 'block w-full md:w-auto'}`}>
-          <Sidebar />
+          <Sidebar searchQuery={searchQuery} />
         </div>
 
         {/* Окно чата: на мобильном скрываем когда нет активного чата */}

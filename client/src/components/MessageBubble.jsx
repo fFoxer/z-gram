@@ -147,19 +147,22 @@ const MessageBubble = ({ message, isMine, onEdit, onDelete, currentUserId, isGro
 
           {isImage && (
             <>
-              <div className="mb-2 rounded-lg overflow-hidden max-w-[250px]"><img src={fileUrl} alt="" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(fileUrl, '_blank')} /></div>
+              <div className="mb-1 rounded-lg overflow-hidden max-w-[250px]"><img src={fileUrl} alt="" className="w-full h-auto object-cover cursor-pointer" onClick={() => window.open(fileUrl, '_blank')} /></div>
+              {message.content && <p className="break-words leading-snug px-2 pb-1 text-sm">{renderRichContent(message.content)}</p>}
               {renderDownloadLink()}
             </>
           )}
           {isVideo && (
             <>
-              <div className="mb-2 rounded-lg overflow-hidden max-w-[280px] bg-[#1a1a1a] border border-[#333]"><video src={fileUrl} controls playsInline preload="metadata" className="w-full h-auto max-h-[300px] object-contain" /></div>
+              <div className="mb-1 rounded-lg overflow-hidden max-w-[280px] bg-[#1a1a1a] border border-[#333]"><video src={fileUrl} controls playsInline preload="metadata" className="w-full h-auto max-h-[300px] object-contain" /></div>
+              {message.content && <p className="break-words leading-snug px-2 pb-1 text-sm">{renderRichContent(message.content)}</p>}
               {renderDownloadLink()}
             </>
           )}
           {isAudio && (
             <>
               <div className="my-1"><VoicePlayer url={fileUrl} durationString={message.duration} /></div>
+              {message.content && <p className="break-words leading-snug px-2 pb-1 text-sm">{renderRichContent(message.content)}</p>}
               {renderDownloadLink()}
             </>
           )}

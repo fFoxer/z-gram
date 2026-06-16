@@ -220,4 +220,46 @@ router.post('/:chatId/participants', authMiddleware, async (req, res) => {
   }
 });
 
+// DELETE /api/chats/:chatId/messages — очистить историю
+router.delete('/:chatId/messages', authMiddleware, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const isMember = await pool.query(
+      'SELECT 1 FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+      [chatId, req.user.id]
+    );
+    if (isMember.rows.length === 0) return res.status(403).json({ message: 'Нет доступа' });
+
+    await pool.query('DELETE FROM messages WHERE chat_id = $1', [chatId]);
+    req.app.get('io').to(`chat_${chatId}`).emit('history_cleared', { chatId });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error clearing history:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+// DELETE /api/chats/:chatId — покинуть / удалить чат
+router.delete('/:chatId', authMiddleware, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    await pool.query(
+      'DELETE FROM chat_participants WHERE chat_id = $1 AND user_id = $2',
+      [chatId, req.user.id]
+    );
+    // Если участников не осталось — удаляем чат целиком
+    const remaining = await pool.query(
+      'SELECT 1 FROM chat_participants WHERE chat_id = $1',
+      [chatId]
+    );
+    if (remaining.rows.length === 0) {
+      await pool.query('DELETE FROM chats WHERE id = $1', [chatId]);
+    }
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting chat:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
 module.exports = router;

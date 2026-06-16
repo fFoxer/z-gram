@@ -16,6 +16,7 @@ const authRoutes = require('./routes/authRoutes');
 const chatRoutes = require('./routes/chatRoutes');
 const adminRoutes = require('./routes/admin');
 const usersRoutes = require('./routes/usersRoutes');
+const qrRoutes = require('./routes/qrRoutes');
 
 const app = express();
 
@@ -93,6 +94,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/api/admin', adminRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/auth/qr', qrRoutes);
 app.use('/api/chats', chatRoutes);
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
@@ -224,6 +226,20 @@ io.on('connection', (socket) => {
         chatId: chatId
       };
 
+      // Принудительно добавляем всех онлайн-участников в комнату (для новых чатов)
+      const participants = await pool.query(
+        'SELECT user_id FROM chat_participants WHERE chat_id = $1',
+        [chatId]
+      );
+      for (const { user_id } of participants.rows) {
+        const socketId = onlineUsers.get(String(user_id));
+        if (socketId) {
+          const sock = io.sockets.sockets.get(socketId);
+          if (sock) sock.join(`chat_${chatId}`);
+        }
+      }
+
+      // Теперь все онлайн-участники в комнате — отправляем одним emit
       io.to(`chat_${chatId}`).emit('receive_message', message);
     } catch (error) {
       console.error('❌ Error sending message:', error);
@@ -361,6 +377,11 @@ socket.on('end-call', async ({ to }) => {
     socket.to(`chat_${chatId}`).emit('user_typing', { userId, isTyping });
   });
 
+  // QR авторизация
+  socket.on('join_qr_room', (qrToken) => {
+    socket.join(`qr:${qrToken}`);
+  });
+
   // Комнаты чатов
   socket.on('join_chat', (chatId) => {
     socket.join(`chat_${chatId}`);
@@ -383,9 +404,11 @@ app.post('/api/upload', upload.single('file'), (req, res) => {
 const clientBuildPath = path.join(__dirname, '../client/build');
 if (fs.existsSync(clientBuildPath)) {
   app.use(express.static(clientBuildPath));
-  app.get('*', (req, res) => {
+  app.use((req, res, next) => {
     if (!req.path.startsWith('/api') && !req.path.startsWith('/uploads')) {
       res.sendFile(path.join(clientBuildPath, 'index.html'));
+    } else {
+      next();
     }
   });
   console.log('📦 Serving React build from client/build');

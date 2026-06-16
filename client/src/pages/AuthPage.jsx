@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { login, register } from '../store/authSlice';
+import QRLoginView from '../components/QRLoginView';
 
 // Список стран с кодами
 const countries = [
@@ -25,6 +26,7 @@ const AuthPage = () => {
     return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 8)} ${digits.slice(8, 10)}`;
   };
   const [isLogin, setIsLogin] = useState(true);
+  const [showQR, setShowQR] = useState(false);
   const [showCountryDropdown, setShowCountryDropdown] = useState(false);
   const [formData, setFormData] = useState({
     username: '',
@@ -83,23 +85,26 @@ const AuthPage = () => {
         
         {/* Карточка */}
         <div className="w-full max-w-[450px] bg-[#555555] rounded-lg shadow-2xl p-10">
-          
+
           {/* Заголовок */}
           <h2 className="text-3xl font-bold text-white text-center mb-3 uppercase tracking-wide drop-shadow-lg">
             Добро пожаловать
           </h2>
-          
-          <p className="text-gray-200 text-sm text-center mb-8 leading-relaxed">
-            Пожалуйста, выберите свою страну и введите полный номер телефона.
-          </p>
 
-          {error && (
+          {/* QR режим */}
+          {showQR && <QRLoginView onBack={() => setShowQR(false)} />}
+
+          {!showQR && <p className="text-gray-200 text-sm text-center mb-8 leading-relaxed">
+            Пожалуйста, выберите свою страну и введите полный номер телефона.
+          </p>}
+
+          {!showQR && error && (
             <div className="bg-red-500/20 border border-red-400 text-red-300 text-sm p-3 rounded mb-6 text-center animate-pulse">
               {error}
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          {!showQR && <form onSubmit={handleSubmit} className="space-y-5">
             
             {/* Выбор страны с выпадающим списком */}
             <div className="relative">
@@ -200,15 +205,16 @@ const AuthPage = () => {
               </div>
             )}
 
-            {/* ✅ КНОПКИ (одинаковый стиль) */}
+            {/* КНОПКИ */}
             <div className="flex items-center justify-between mt-8 pt-2">
               <button
                 type="button"
+                onClick={() => setShowQR(true)}
                 className="bg-[#444] hover:bg-[#555] text-gray-300 text-sm px-4 py-2 rounded transition-colors"
               >
                 или войти по QR-code
               </button>
-              
+
               <button
                 type="submit"
                 disabled={loading}
@@ -217,18 +223,18 @@ const AuthPage = () => {
                 {loading ? 'Загрузка...' : 'Далее'}
               </button>
             </div>
-          </form>
+          </form>}
 
           {/* Переключатель */}
-          <div className="mt-8 text-center">
-            <button 
+          {!showQR && <div className="mt-8 text-center">
+            <button
               type="button"
               onClick={() => setIsLogin(!isLogin)}
-              className="text-blue-400 text-sm hover:text-blue-300 hover:underline transition-colors"
+              className="bg-[#444] hover:bg-[#555] text-gray-300 text-sm px-4 py-2 rounded transition-colors"
             >
               {isLogin ? 'Зарегистрироваться' : 'Уже есть аккаунт? Войти'}
             </button>
-          </div>
+          </div>}
 
         </div>
       </div>

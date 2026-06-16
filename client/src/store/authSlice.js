@@ -90,6 +90,24 @@ export const updateProfile = createAsyncThunk(
   }
 );
 
+export const initAuth = createAsyncThunk(
+  'auth/initAuth',
+  async (_, { rejectWithValue }) => {
+    const token = localStorage.getItem('accessToken');
+    if (!token) return rejectWithValue('no token');
+    try {
+      const res = await axios.get(`${API_URL}/users/me`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return res.data;
+    } catch {
+      localStorage.removeItem('accessToken');
+      localStorage.removeItem('refreshToken');
+      return rejectWithValue('invalid token');
+    }
+  }
+);
+
 // === SLICE ===
 
 const authSlice = createSlice({
@@ -97,7 +115,7 @@ const authSlice = createSlice({
   initialState: {
     user: null,
     isAuthenticated: false,
-    loading: false,
+    loading: true,
     error: null,
   },
   reducers: {
@@ -142,6 +160,16 @@ const authSlice = createSlice({
         if (state.user) {
           state.user = { ...state.user, ...normalizeUser(action.payload) };
         }
+      })
+      // Init Auth
+      .addCase(initAuth.fulfilled, (state, action) => {
+        state.loading = false;
+        state.user = normalizeUser(action.payload);
+        state.isAuthenticated = true;
+      })
+      .addCase(initAuth.rejected, (state) => {
+        state.loading = false;
+        state.isAuthenticated = false;
       });
   },
 });
