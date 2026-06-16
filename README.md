@@ -207,36 +207,3 @@ cd client && npm install && npm start
 | `call-rejected` | Звонок отклонён |
 | `call-ended` | Звонок завершён |
 
-## Деплой (Railway)
-
-1. Создать новый проект на [railway.app](https://railway.app)
-2. Подключить GitHub-репозиторий
-3. Добавить плагины: **PostgreSQL** и **Redis**
-4. В переменных сервиса добавить:
-
-```
-NODE_ENV=production
-HTTPS=false
-JWT_ACCESS_SECRET=<случайная строка>
-JWT_REFRESH_SECRET=<другая случайная строка>
-JWT_ACCESS_EXPIRE=15m
-JWT_REFRESH_EXPIRE=7d
-DATABASE_URL=${{Postgres.DATABASE_URL}}
-REDIS_URL=${{Redis.REDIS_URL}}
-```
-
-Railway автоматически соберёт проект и запустит схему БД при старте.
-
-## Переменные окружения
-
-| Переменная | Обязательная | Описание |
-|-----------|:---:|----------|
-| `DATABASE_URL` | ✓ | URL PostgreSQL (Railway подставляет автоматически) |
-| `REDIS_URL` | ✓ | URL Redis |
-| `JWT_ACCESS_SECRET` | ✓ | Секрет для access-токенов |
-| `JWT_REFRESH_SECRET` | ✓ | Секрет для refresh-токенов |
-| `JWT_ACCESS_EXPIRE` | | Срок жизни access-токена (по умолчанию `15m`) |
-| `JWT_REFRESH_EXPIRE` | | Срок жизни refresh-токена (по умолчанию `7d`) |
-| `PORT` | | Порт сервера (по умолчанию `5000`) |
-| `HTTPS` | | Включить HTTPS (`true`/`false`) |
-| `NODE_ENV` | | Окружение (`development`/`production`) |
