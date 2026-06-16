@@ -5,7 +5,7 @@
   "scripts": {
     "postinstall": "npm install --prefix server && npm install --prefix client",
     "build": "cd client && CI=false npm run build",
-    "start": "node server/index.js"
+    "start": "node server/db/init.js && node server/index.js"
   },
   "engines": {
     "node": ">=18.0.0"

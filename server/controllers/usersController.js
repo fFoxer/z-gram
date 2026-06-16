@@ -1,7 +1,5 @@
 const pool = require('../config/database');
 
-// Auto-migrate: add birthday column if not exists
-pool.query("ALTER TABLE users ADD COLUMN IF NOT EXISTS birthday VARCHAR(50)").catch(() => {});
 
 // Получить свой профиль
 exports.getMe = async (req, res) => {
